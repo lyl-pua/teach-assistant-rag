@@ -170,6 +170,9 @@ _KEY_NORMALIZE = {
     "openai_api_key":   "OPENAI_API_KEY",
     "zhipu_api_key":    "ZHIPU_API_KEY",
     "glm_api_key":      "GLM_API_KEY",
+    "dashscope_api_key":"DASHSCOPE_API_KEY",
+    "qwen_api_key":     "QWEN_API_KEY",
+    "qianwen_api_key":  "QWEN_API_KEY",
     "city_latitude":    "city_lat",
     "city_longitude":   "city_lon",
 }

@@ -19,6 +19,9 @@ RELOADABLE_SETTINGS = {
     # 智谱 AI（embedding + chat）
     "ZHIPU_API_KEY": "",
     "GLM_API_KEY": "",
+    # 千问 / 阿里云 DashScope（多模态 qwen-vl-plus / 通义万相 / 视频生成）
+    "DASHSCOPE_API_KEY": "",
+    "QWEN_API_KEY": "",
     # 和风天气 Web API Key（可选，未配置则使用 Open-Meteo 主源）
     "HEFENG_API_KEY": "",
     # 用户/城市
@@ -88,12 +91,22 @@ def get_zhipu_key() -> str:
     return get_env_or_db("ZHIPU_API_KEY", "") or get_env_or_db("GLM_API_KEY", "")
 
 
+def get_dashscope_key() -> str:
+    """千问 / 阿里云 DashScope Key（多模态 qwen-vl-plus / 万相 / 视频生成）"""
+    return get_env_or_db("DASHSCOPE_API_KEY", "") or get_env_or_db("QWEN_API_KEY", "")
+
+
 def has_any_llm_key() -> bool:
-    return bool(get_sk_key() or get_zhipu_key())
+    return bool(get_sk_key() or get_zhipu_key() or get_dashscope_key())
 
 
 def has_any_embed_key() -> bool:
     return bool(get_zhipu_key())
+
+
+def has_vlm_key() -> bool:
+    """是否有视觉多模态 Key（DashScope qwen-vl-plus）"""
+    return bool(get_dashscope_key())
 
 
 def get_user_name() -> str:

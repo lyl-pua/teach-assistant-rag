@@ -35,6 +35,20 @@ class AskBody(BaseModel):
     stream: Optional[bool] = False  # 预留
 
 
+# ========= 多模态请求体 =========
+class VisionChatBody(BaseModel):
+    image_urls: List[str]
+    prompt: str = "请描述这张图片中的内容，并给出小学语文教学场景下可以如何利用这张图。"
+    temperature: float = 0.5
+    max_tokens: int = 1500
+
+
+class TextToImageBody(BaseModel):
+    prompt: str
+    size: str = "1024*1024"
+    n: int = 1
+
+
 class SessionCreate(BaseModel):
     title: str = "新会话"
 
@@ -339,3 +353,53 @@ async def ai_stream_post(body: AskBody):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# ================= 多模态：视觉问答（qwen-vl-plus） =================
+@router.post("/ai/vision_chat")
+def ai_vision_chat(body: VisionChatBody):
+    """
+    多模态图文理解接口。
+    Body: {image_urls: ["https://.../a.jpg"], prompt: "帮我分析这张学生作业照片并给出评语"}
+    使用场景：批改作业照片、识别教材页面、板书分析、课堂照片解读等。
+    """
+    urls = [u.strip() for u in (body.image_urls or []) if (u or "").strip()]
+    if not urls:
+        raise HTTPException(400, "image_urls 不能为空（至少传入一张图片的 URL）")
+    if not config.has_vlm_key():
+        raise HTTPException(400, "未配置 DashScope/千问 API Key，无法使用多模态视觉理解")
+    try:
+        answer = GENERATOR.vision_chat(
+            image_urls=urls,
+            prompt=body.prompt or "请详细描述图片内容并说明教学上可以如何利用。",
+            temperature=body.temperature,
+            max_tokens=body.max_tokens,
+        )
+        usage = GENERATOR.last_usage or {}
+        return {"answer": answer, "model_used": "qwen-vl-plus", "usage": usage}
+    except RuntimeError as e:
+        raise HTTPException(500, str(e))
+
+
+# ================= 多模态：文本生图（通义万相 flux-schnell） =================
+@router.post("/ai/text_to_image")
+def ai_text_to_image(body: TextToImageBody):
+    """
+    文生图接口（根据提示词生成插画/配图）。
+    Body: {prompt: "唐诗《静夜思》配图：月夜窗边思念故乡的儿童，水墨国风", size:"1024*1024", n:1}
+    教学场景：课文配图、古诗词插画、教学卡片插图、课堂活动海报等。
+    """
+    if not body.prompt or not body.prompt.strip():
+        raise HTTPException(400, "prompt 不能为空")
+    if not config.has_vlm_key():
+        raise HTTPException(400, "未配置 DashScope/千问 API Key，无法使用文生图")
+    try:
+        urls = GENERATOR.text_to_image(
+            prompt=body.prompt.strip(),
+            size=body.size or "1024*1024",
+            n=body.n or 1,
+        )
+        usage = GENERATOR.last_usage or {}
+        return {"image_urls": urls, "model_used": "flux-schnell", "usage": usage}
+    except RuntimeError as e:
+        raise HTTPException(500, str(e))

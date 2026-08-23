@@ -21,6 +21,14 @@ ZHIPU_CHAT_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
 ZHIPU_MODEL = "glm-4-flash"
 ZHIPU_LONG_MODEL = "glm-4"
 
+# 千问 DashScope（多模态：qwen-vl-plus 视觉理解；文本：qwen-plus）
+DASHSCOPE_CHAT_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+DASHSCOPE_VL_MODEL = "qwen-vl-plus"       # 视觉多模态（图文理解）
+DASHSCOPE_TEXT_MODEL = "qwen-plus"        # 纯文本生成（兜底）
+DASHSCOPE_TTI_MODEL = "flux-schnell"      # 通义万相文本生图（通过 wanx 专用接口）
+WANX_IMAGE_URL = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis"
+WANX_TASK_URL = "https://dashscope.aliyuncs.com/api/v1/tasks/{task_id}"
+
 # =========== Token 优化：LLM 查询缓存 ===========
 # 缓存结构：{cache_key: {"content": str, "ts": float, "usage": dict}}
 _LLM_CACHE: dict = {}
@@ -133,14 +141,17 @@ def get_token_stats() -> dict:
 
 
 def _provider_info() -> tuple[str, str, str]:
-    """返回 (provider, endpoint, model)"""
+    """返回 (provider, endpoint, model)。优先级：DeepSeek > 智谱 > 千问"""
     sk = config.get_sk_key()
     if sk:
         return "deepseek", DEEPSEEK_URL, DEEPSEEK_MODEL
     zk = config.get_zhipu_key()
     if zk:
         return "zhipu", ZHIPU_CHAT_URL, ZHIPU_MODEL
-    raise RuntimeError("未配置任何 LLM API Key（deepseek/openai/zhipu/glm）")
+    dk = config.get_dashscope_key()
+    if dk:
+        return "dashscope", DASHSCOPE_CHAT_URL, DASHSCOPE_TEXT_MODEL
+    raise RuntimeError("未配置任何 LLM API Key（deepseek/openai/zhipu/glm/dashscope/qwen）")
 
 
 class LLMGenerator:
@@ -197,8 +208,10 @@ class LLMGenerator:
         }
         if provider == "deepseek":
             key = config.get_sk_key()
-        else:
+        elif provider == "zhipu":
             key = config.get_zhipu_key()
+        else:
+            key = config.get_dashscope_key()
         headers = {
             "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
@@ -237,6 +250,182 @@ class LLMGenerator:
             _set_cached(cache_key, content, self.last_usage)
 
         return content or ""
+
+    # ============== 多模态：视觉理解（qwen-vl-plus） ==============
+    def vision_chat(
+        self,
+        image_urls: list[str],
+        prompt: str = "请描述这张图片中的内容，并给出小学语文教学场景下可以如何利用这张图。",
+        temperature: float = 0.5,
+        max_tokens: int = 1500,
+        timeout: int = 180,
+    ) -> str:
+        """
+        千问 qwen-vl-plus 视觉问答：接收图片 URL（支持 http(s):// 或 oss://），返回文字理解。
+        - 可用于批改作业照片、识别教材页面、理解板书、课堂照片分析等教学场景。
+        """
+        key = config.get_dashscope_key()
+        if not key:
+            raise RuntimeError("未配置 DashScope/千问 API Key，无法使用多模态视觉理解（请在设置页填入 DASHSCOPE_API_KEY）")
+        if not image_urls:
+            raise RuntimeError("至少需要传入一张图片 URL")
+
+        # 构建 qwen-vl-plus 原生 message content 格式
+        content = []
+        for idx, url in enumerate(image_urls, 1):
+            u = (url or "").strip()
+            if not u:
+                continue
+            # 兼容 base64（data:image/...）直接透传；本地文件请先上传再给 URL
+            content.append({"image": u})
+        content.append({"text": prompt or "请详细描述图片内容。"})
+        messages = [{"role": "user", "content": content}]
+
+        body = {
+            "model": DASHSCOPE_VL_MODEL,
+            "input": {"messages": messages},
+            "parameters": {
+                "temperature": float(temperature),
+                "max_tokens": int(max_tokens),
+                "result_format": "message",
+            },
+        }
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "X-DashScope-Async": "enable",
+        }
+        # 同步版：先提交任务，再轮询结果（更稳定，兼容长耗时图片分析）
+        submit_url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
+        t0 = time.time()
+        resp = requests.post(submit_url, headers=headers, json=body, timeout=timeout)
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"qwen-vl-plus 提交失败 HTTP {resp.status_code}: {resp.text[:400]}"
+            )
+        submit_data = resp.json()
+        task_id = submit_data.get("output", {}).get("task_id") or submit_data.get("task_id")
+        if not task_id:
+            # 兼容同步直接返回（有些版本不需要异步）
+            try:
+                return submit_data["output"]["choices"][0]["message"]["content"][0]["text"]
+            except Exception:
+                raise RuntimeError(f"qwen-vl-plus 返回异常: {json.dumps(submit_data, ensure_ascii=False)[:400]}")
+
+        # 轮询任务完成
+        task_url = f"https://dashscope.aliyuncs.com/api/v1/tasks/{task_id}"
+        poll_headers = {"Authorization": f"Bearer {key}"}
+        deadline = time.time() + timeout
+        last_body = ""
+        while time.time() < deadline:
+            time.sleep(2.0)
+            r = requests.get(task_url, headers=poll_headers, timeout=30)
+            if r.status_code != 200:
+                continue
+            last_body = r.text
+            info = r.json()
+            status = (info.get("output", {}).get("task_status") or info.get("task_status") or "").upper()
+            if status in {"SUCCEEDED", "SUCCEED", "DONE", "SUCCESS"}:
+                try:
+                    choices = info["output"]["choices"]
+                    ans = choices[0]["message"]["content"]
+                    if isinstance(ans, list):
+                        texts = [c.get("text", "") for c in ans if isinstance(c, dict)]
+                        ans = "\n".join(t for t in texts if t)
+                    self.last_usage = {
+                        "provider": "dashscope",
+                        "model": DASHSCOPE_VL_MODEL,
+                        "prompt_tokens": int(info.get("usage", {}).get("input_tokens", 0) or 0),
+                        "completion_tokens": int(info.get("usage", {}).get("output_tokens", 0) or 0),
+                        "total_tokens": int(info.get("usage", {}).get("image_tokens", 0) or 0)
+                                        + int(info.get("usage", {}).get("input_tokens", 0) or 0)
+                                        + int(info.get("usage", {}).get("output_tokens", 0) or 0),
+                        "latency_ms": int((time.time() - t0) * 1000),
+                        "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    }
+                    try:
+                        _record_token_usage(self.last_usage)
+                    except Exception:
+                        pass
+                    return ans or ""
+                except (KeyError, IndexError) as e:
+                    raise RuntimeError(f"qwen-vl-plus 结果结构异常: {json.dumps(info, ensure_ascii=False)[:400]}") from e
+            if status in {"FAILED", "FAIL", "ERROR"}:
+                raise RuntimeError(f"qwen-vl-plus 任务失败: {json.dumps(info, ensure_ascii=False)[:400]}")
+            # RUNNING / PENDING 继续等待
+        raise RuntimeError(f"qwen-vl-plus 任务超时: {last_body[:400]}")
+
+    # ============== 多模态：文本生图（通义万相 / flux-schnell） ==============
+    def text_to_image(
+        self,
+        prompt: str,
+        size: str = "1024*1024",
+        n: int = 1,
+        timeout: int = 180,
+    ) -> list[str]:
+        """
+        通义万相文生图（走 DashScope Wanx 接口）。返回图片 URL 列表（HTTP 直链，有效期约 1 小时）。
+        教学场景：根据课文/古诗词生成配图、教学卡片插画、课堂活动海报等。
+        """
+        key = config.get_dashscope_key()
+        if not key:
+            raise RuntimeError("未配置 DashScope/千问 API Key，无法使用文生图（请在设置页填入 DASHSCOPE_API_KEY）")
+        if not prompt or not prompt.strip():
+            raise RuntimeError("prompt 不能为空")
+
+        body = {
+            "model": "flux-schnell",
+            "input": {"prompt": prompt.strip()},
+            "parameters": {"size": size or "1024*1024", "n": max(1, min(int(n or 1), 4))},
+        }
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "X-DashScope-Async": "enable",
+        }
+        t0 = time.time()
+        resp = requests.post(WANX_IMAGE_URL, headers=headers, json=body, timeout=timeout)
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"万相文生图提交失败 HTTP {resp.status_code}: {resp.text[:400]}"
+            )
+        info = resp.json()
+        task_id = info.get("output", {}).get("task_id") or info.get("task_id")
+        if not task_id:
+            raise RuntimeError(f"万相文生图未返回任务ID: {json.dumps(info, ensure_ascii=False)[:400]}")
+
+        # 轮询任务完成
+        task_url = WANX_TASK_URL.format(task_id=task_id)
+        poll_headers = {"Authorization": f"Bearer {key}"}
+        deadline = time.time() + timeout
+        last_body = ""
+        while time.time() < deadline:
+            time.sleep(3.0)
+            r = requests.get(task_url, headers=poll_headers, timeout=30)
+            if r.status_code != 200:
+                continue
+            last_body = r.text
+            info = r.json()
+            status = (info.get("output", {}).get("task_status") or info.get("task_status") or "").upper()
+            if status in {"SUCCEEDED", "SUCCEED", "DONE", "SUCCESS"}:
+                results = info.get("output", {}).get("results") or []
+                urls = [it.get("url") or it.get("image_url") for it in results]
+                urls = [u for u in urls if u]
+                if not urls:
+                    raise RuntimeError(f"万相文生图未返回图片: {json.dumps(info, ensure_ascii=False)[:400]}")
+                self.last_usage = {
+                    "provider": "dashscope",
+                    "model": "flux-schnell",
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                    "latency_ms": int((time.time() - t0) * 1000),
+                    "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
+                }
+                return urls
+            if status in {"FAILED", "FAIL", "ERROR"}:
+                raise RuntimeError(f"万相文生图任务失败: {json.dumps(info, ensure_ascii=False)[:400]}")
+        raise RuntimeError(f"万相文生图任务超时: {last_body[:400]}")
 
 
 # 全局单例
