@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>教学助手 · 刘老师的国风教研工作台</title>
-<link rel="stylesheet" href="./static/style.css?v=2.1.0" />
+<link rel="stylesheet" href="./static/style.css?v=2.3.0" />
 </head>
 <body data-theme="dark">
   <div class="app">
@@ -29,7 +29,7 @@
           <div class="seal">印</div>
           <span id="sidebar-teacher-name">刘老师</span>
         </div>
-        <div class="version">v2.0 · RAG</div>
+        <div class="version">v2.3 · 多模态 + RAG</div>
       </div>
     </aside>
 
@@ -186,28 +186,112 @@
               </ul>
             </aside>
             <section class="chat-right">
-              <div class="chat-history" id="chatHistory">
-                <div class="chat-placeholder">
-                  <div class="chat-hint-card">
-                    <h2>🎋 AI 教研助手 · RAG 问答</h2>
-                    <p>基于您的知识库文档，生成教案、解读课文、分析学情。</p>
-                    <div class="quick-prompts" id="quickPrompts">
-                      <span>静夜思的教学目标？</span>
-                      <span>三年级《大青树下的小学》教案</span>
-                      <span>二年级班主任家长会沟通要点</span>
-                      <span>学困生如何帮扶？</span>
-                      <span>《村居》识字教学设计</span>
+              <!-- AI 助手多模态 Tab -->
+              <div class="tabs-bar no-sticky" id="assistantTabs">
+                <span class="assistant-tab active" data-atab="text">💬 文本问答（RAG）</span>
+                <span class="assistant-tab" data-atab="vision">🖼️ 图片理解（千问 qwen-vl-plus）</span>
+                <span class="assistant-tab" data-atab="image">🎨 文生图（通义万相 flux-schnell）</span>
+              </div>
+
+              <!-- Tab 1: 文本 RAG 问答 -->
+              <div class="assistant-pane active" data-apane="text">
+                <div class="chat-history" id="chatHistory">
+                  <div class="chat-placeholder">
+                    <div class="chat-hint-card">
+                      <h2>🎋 AI 教研助手 · RAG 问答</h2>
+                      <p>基于您的知识库文档，生成教案、解读课文、分析学情。</p>
+                      <div class="quick-prompts" id="quickPrompts">
+                        <span>静夜思的教学目标？</span>
+                        <span>三年级《大青树下的小学》教案</span>
+                        <span>二年级班主任家长会沟通要点</span>
+                        <span>学困生如何帮扶？</span>
+                        <span>《村居》识字教学设计</span>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-              <div class="chat-input-wrap">
-                <div class="chat-input-row">
-                  <textarea id="chatInput" rows="2" placeholder="向 AI 教研助手提问…（Enter 发送，Shift+Enter 换行）"></textarea>
-                  <button class="btn primary" id="sendBtn">发送</button>
+                <div class="chat-input-wrap">
+                  <div class="chat-input-row">
+                    <textarea id="chatInput" rows="2" placeholder="向 AI 教研助手提问…（Enter 发送，Shift+Enter 换行）"></textarea>
+                    <button class="btn primary" id="sendBtn">发送</button>
+                  </div>
+                  <div class="chat-foot-meta" id="chatFootMeta">模型：-- ｜ 知识库：已启用（top_k=3）</div>
                 </div>
-                <div class="chat-foot-meta" id="chatFootMeta">模型：-- ｜ 知识库：已启用（top_k=3）</div>
               </div>
+
+              <!-- Tab 2: 图片理解（qwen-vl-plus） -->
+              <div class="assistant-pane" data-apane="vision">
+                <div class="chat-history" id="visionHistory">
+                  <div class="chat-placeholder">
+                    <div class="chat-hint-card">
+                      <h2>🖼️ 多模态 · 图片理解</h2>
+                      <p>上传作业照片 / 教材页面 / 板书 / 课堂照片，AI 结合语文教学场景给出专业解读与教学建议。</p>
+                      <p class="tip">当前版本：请先把图片放到可访问 URL（例如上传到阿里云 OSS / 图床 / 本校服务器静态目录），粘贴到下方。</p>
+                      <div class="quick-prompts" id="visionQuickPrompts">
+                        <span data-vp="请批改这张三年级语文作业照片，指出错误并给出鼓励性评语">📝 批改作业照片</span>
+                        <span data-vp="请识别本页教材的知识点，并给出教学要点和课堂提问">📖 识别教材页面</span>
+                        <span data-vp="请整理这份板书为结构化笔记，并补充延伸的知识点">🎋 分析课堂板书</span>
+                        <span data-vp="请为这张学生作品写语文点评，包含优点+建议+拓展方向">🎨 学生作品点评</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="chat-input-wrap">
+                  <div class="form-row" style="margin:0 0 8px 0;">
+                    <label style="width:100px;">图片 URL 列表</label>
+                    <textarea id="visionUrls" rows="2" placeholder="每行一个图片 URL，例如：&#10;https://your-site.com/作业-1.jpg&#10;https://your-site.com/作业-2.jpg"></textarea>
+                  </div>
+                  <div class="chat-input-row">
+                    <textarea id="visionPrompt" rows="2" placeholder="你希望 AI 如何分析这些图片？（可点击上方快捷模板）"></textarea>
+                    <button class="btn primary" id="visionAnalyzeBtn">🔍 开始分析</button>
+                  </div>
+                  <div class="chat-foot-meta">模型：qwen-vl-plus（千问 DashScope）｜ 支持 1-9 张图</div>
+                </div>
+              </div>
+
+              <!-- Tab 3: 文生图（通义万相 flux-schnell） -->
+              <div class="assistant-pane" data-apane="image">
+                <div class="chat-history" id="ttiHistory">
+                  <div class="chat-placeholder">
+                    <div class="chat-hint-card">
+                      <h2>🎨 多模态 · 文生图（通义万相）</h2>
+                      <p>输入描述，为课文 / 古诗词 / 教学活动生成国风配图、插画或海报。</p>
+                      <div class="quick-prompts" id="ttiQuickPrompts">
+                        <span data-tp="唐诗《静夜思》配图：月夜窗边，古装儿童仰望明月思念故乡，水墨国风，留白意境">🌙 静夜思配图</span>
+                        <span data-tp="小学语文课文《大青树下的小学》场景还原：老榕树下各族小学生穿着民族服饰读书，暖色调国风插画">🏫 大青树下的小学</span>
+                        <span data-tp="读书分享会海报：古代卷轴、毛笔、竹简、儿童阅读剪影，国风设计，正中央写上「读书日」">📚 读书日海报</span>
+                        <span data-tp="家长会黑板海报：黑板+粉笔字+花朵边框，温馨小学教室风格，写上「家校共育」">👨‍👩‍👧 家长会海报</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="chat-input-wrap">
+                  <div class="form-row two" style="margin:0 0 8px 0;">
+                    <div>
+                      <label>画幅尺寸</label>
+                      <select id="ttiSize">
+                        <option value="1024*1024">1024 * 1024（方图）</option>
+                        <option value="720*1280">720 * 1280（竖版海报）</option>
+                        <option value="1280*720">1280 * 720（横版 PPT）</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label>生成数量</label>
+                      <select id="ttiCount">
+                        <option value="1">1 张</option>
+                        <option value="2">2 张</option>
+                        <option value="4">4 张（最多）</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="chat-input-row">
+                    <textarea id="ttiPrompt" rows="2" placeholder="请输入画面描述（可加风格：水墨国风/水彩/扁平插画/卡通儿童…）"></textarea>
+                    <button class="btn primary" id="ttiGenBtn">🎨 开始生成</button>
+                  </div>
+                  <div class="chat-foot-meta">模型：通义万相 flux-schnell（千问 DashScope）｜ 生成后右键可保存</div>
+                </div>
+              </div>
+
             </section>
           </div>
         </div>
@@ -219,6 +303,7 @@
             <span class="tools-tab" data-tool="courseware">🎞️ 课件大纲</span>
             <span class="tools-tab" data-tool="homework">📝 作业设计</span>
             <span class="tools-tab" data-tool="paper">📑 论文提纲</span>
+            <span class="tools-tab" data-tool="ppt">📽️ 生成 PPT</span>
           </div>
           <div class="tools-wrap">
             <div class="tools-form">
@@ -352,13 +437,22 @@
                 <button class="btn outline small test-btn" data-prov="zhipu">测试连通</button>
               </div>
 
+              <h3 class="p-title" style="margin-top: 16px;">千问 DashScope · 多模态（图片理解 / 文生图 · sk-XXX 开头）</h3>
+              <p class="tip">🔒 配置后可在 AI 助手页使用「图片理解」和「文生图」两个多模态面板。若未配置，多模态按钮会提示您先到此处设置。</p>
+
+              <div class="form-row key-row">
+                <label>千问 / DashScope API Key（qwen-vl-plus / 通义万相）</label>
+                <input id="s-dashscope-key" type="password" class="mono" placeholder="sk-xxxxxxxxxxxxxxxx" autocomplete="off" />
+                <button class="btn outline small test-btn" data-prov="dashscope">测试连通</button>
+              </div>
+
               <div class="form-actions">
                 <button class="btn primary" id="saveAIKeysBtn">💾 保存 API Key</button>
               </div>
 
               <div class="card-note">
                 <b>使用优先级：</b>
-                聊天模型优先使用 DeepSeek/OpenAI Key；Embedding 与知识库向量化优先使用智谱 Key。未配置时后端会使用"模板占位"返回。
+                聊天模型优先使用 DeepSeek/OpenAI Key；Embedding 与知识库向量化优先使用智谱 Key；<b>多模态（图片理解 / 文生图）</b>使用千问 DashScope Key。未配置时后端会使用"模板占位"返回。
               </div>
             </div>
           </div>
@@ -560,6 +654,6 @@
 
   <div id="toast" class="toast"></div>
   <script src="./poems.js?v=2.1.0"></script>
-  <script src="./static/app.js?v=2.1.0"></script>
+  <script src="./static/app.js?v=2.3.0"></script>
 </body>
 </html>

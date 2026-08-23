@@ -2063,6 +2063,250 @@ input, textarea, select { font-family: inherit; color: inherit; }
   background: linear-gradient(135deg, #2A5047, #4A8274);
 }
 
+/* ================= 多模态 & PPT 面板（v2.3）================= */
+.tabs-bar.no-sticky {
+  position: static;
+  backdrop-filter: none;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0 0 0 0;
+  margin: 0 0 12px 0;
+  overflow-x: auto;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.assistant-tab {
+  padding: 9px 18px;
+  font-size: 13.5px;
+  color: rgba(247,242,227,0.7);
+  cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.025);
+  border-radius: 999px;
+  transition: all 0.2s;
+  letter-spacing: 0.8px;
+  white-space: nowrap;
+}
+.assistant-tab:hover {
+  border-color: rgba(124,201,163,0.35);
+  color: #7CC9A3;
+}
+.assistant-tab.active {
+  background: linear-gradient(135deg, #2A5047, #4A8274);
+  color: #F7F2E3;
+  border-color: transparent;
+  font-weight: 700;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+}
+.assistant-pane { display: none; flex-direction: column; }
+.assistant-pane.active { display: flex; }
+
+.mm-thumbs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.mm-thumb {
+  width: 96px; height: 96px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.04);
+}
+.mm-question {
+  font-size: 14px;
+  line-height: 1.75;
+  color: #2A3530;
+}
+.mm-answer {
+  font-size: 14px;
+  line-height: 1.85;
+  color: #F7F2E3;
+}
+.mm-answer p { margin: 4px 0; }
+.mm-answer ul, .mm-answer ol { margin: 4px 0 4px 22px; }
+.mm-answer blockquote {
+  margin: 6px 0; padding: 6px 12px;
+  border-left: 3px solid #7CC9A3;
+  background: rgba(124,201,163,0.12);
+  border-radius: 6px;
+  color: #d5e8dd;
+}
+.mm-foot-meta {
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: rgba(247,242,227,0.5);
+  letter-spacing: 0.5px;
+}
+.mm-foot-meta.gray { color: rgba(247,242,227,0.35); }
+.mm-imgs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.mm-img-link {
+  display: block;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.03);
+}
+.mm-gen-img {
+  width: 100%;
+  height: auto;
+  display: block;
+  transition: transform 0.2s;
+}
+.mm-img-link:hover .mm-gen-img { transform: scale(1.02); }
+
+.mm-loading .msg-bubble {
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(124,201,163,0.08),
+    rgba(124,201,163,0.08) 8px,
+    rgba(124,201,163,0.16) 8px,
+    rgba(124,201,163,0.16) 16px
+  ) !important;
+  color: #d5e8dd !important;
+}
+
+/* PPT 幻灯片预览 */
+.ppt-slides-wrap {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 14px;
+  padding: 16px 18px;
+  margin-bottom: 4px;
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  grid-template-rows: auto auto;
+  grid-template-areas:
+    "nav  stage"
+    "nav  notes";
+  gap: 14px;
+}
+.ppt-slide-nav {
+  grid-area: nav;
+  max-height: 520px;
+  overflow-y: auto;
+  padding-right: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ppt-pill {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.02);
+  color: rgba(247,242,227,0.78);
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.ppt-pill:hover { border-color: rgba(124,201,163,0.3); color: #7CC9A3; }
+.ppt-pill.active {
+  background: linear-gradient(135deg, #2A5047, #4A8274);
+  color: #F7F2E3;
+  border-color: transparent;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.25);
+}
+.pill-idx {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center; justify-content: center;
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.22);
+  color: #E6D7AE;
+  font-size: 11px;
+  font-weight: 700;
+}
+.ppt-slide-stage {
+  grid-area: stage;
+  min-height: 300px;
+  background:
+    linear-gradient(135deg, rgba(247,242,227,0.98), rgba(230,215,174,0.92)),
+    repeating-linear-gradient(45deg, rgba(165,106,59,0.04) 0 12px, transparent 12px 24px);
+  border: 1px solid rgba(165,106,59,0.22);
+  border-radius: 10px;
+  padding: 20px 26px;
+  color: #3A2F1E;
+  box-shadow: inset 0 0 30px rgba(165,106,59,0.08), 0 4px 14px rgba(0,0,0,0.22);
+  aspect-ratio: 16 / 9;
+  display: flex;
+  flex-direction: column;
+}
+.ppt-slide-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+  border-bottom: 2px solid rgba(165,106,59,0.3);
+  font-family: 'STFangsong', 'FangSong', serif;
+}
+.ppt-num {
+  font-size: 12px;
+  color: #833F21;
+  background: rgba(165,106,59,0.12);
+  border: 1px solid rgba(165,106,59,0.22);
+  border-radius: 999px;
+  padding: 2px 10px;
+  letter-spacing: 1px;
+}
+.ppt-title {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: #5A3F22;
+}
+.ppt-slide-body {
+  flex: 1;
+  overflow: auto;
+  font-size: 15px;
+  line-height: 1.85;
+}
+.ppt-slide-body h1, .ppt-slide-body h2, .ppt-slide-body h3 {
+  color: #5A3F22;
+  font-family: 'STFangsong', 'FangSong', serif;
+  letter-spacing: 1.2px;
+}
+.ppt-slide-body blockquote {
+  border-left: 3px solid #A56A3B;
+  padding: 4px 10px;
+  background: rgba(165,106,59,0.08);
+  border-radius: 4px;
+  color: #5A3F22;
+}
+.ppt-slide-notes {
+  grid-area: notes;
+  background: rgba(247,242,227,0.05);
+  border: 1px dashed rgba(255,255,255,0.1);
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-size: 13px;
+  color: rgba(247,242,227,0.82);
+  line-height: 1.85;
+}
+.ppt-meta-line { margin-bottom: 6px; }
+.ppt-meta-line.gray { color: rgba(247,242,227,0.4); }
+
+@media (max-width: 1100px) {
+  .ppt-slides-wrap { grid-template-columns: 1fr; grid-template-areas: "stage" "nav" "notes"; }
+  .ppt-slide-nav { max-height: 240px; }
+  .ppt-title { font-size: 18px; }
+}
+@media (max-width: 768px) {
+  .ppt-slide-stage { aspect-ratio: 4 / 3; padding: 14px 16px; min-height: 220px; }
+  .ppt-title { font-size: 15px; letter-spacing: 1px; }
+  .assistant-tab { padding: 7px 12px; font-size: 12px; }
+  .mm-imgs-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+}
+
 /* ================= 响应式 ================= */
 @media (max-width: 1400px) {
   .schedule-wrap { grid-template-columns: 1fr; }

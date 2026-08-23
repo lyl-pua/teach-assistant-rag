@@ -1389,6 +1389,178 @@ function bindAssistantUI() {
       }
     });
   }
+
+  // AI 助手多模态三 Tab 切换
+  var aTabs = document.querySelectorAll('#assistantTabs .assistant-tab');
+  for (var at = 0; at < aTabs.length; at++) {
+    aTabs[at].addEventListener('click', function () {
+      var self = this;
+      var key = self.getAttribute('data-atab') || 'text';
+      document.querySelectorAll('#assistantTabs .assistant-tab').forEach(function (x) { x.classList.remove('active'); });
+      self.classList.add('active');
+      document.querySelectorAll('.assistant-pane').forEach(function (p) {
+        p.classList.toggle('active', p.getAttribute('data-apane') === key);
+      });
+    });
+  }
+
+  // 图片理解：快捷模板
+  var vqEl = document.getElementById('visionQuickPrompts');
+  if (vqEl) {
+    vqEl.addEventListener('click', function (ev) {
+      var t = ev.target;
+      if (t && t.tagName === 'SPAN' && t.getAttribute('data-vp')) {
+        var pp = document.getElementById('visionPrompt');
+        if (pp) { pp.value = t.getAttribute('data-vp'); pp.focus(); }
+      }
+    });
+  }
+  // 文生图：快捷模板
+  var tqEl = document.getElementById('ttiQuickPrompts');
+  if (tqEl) {
+    tqEl.addEventListener('click', function (ev) {
+      var t = ev.target;
+      if (t && t.tagName === 'SPAN' && t.getAttribute('data-tp')) {
+        var pp = document.getElementById('ttiPrompt');
+        if (pp) { pp.value = t.getAttribute('data-tp'); pp.focus(); }
+      }
+    });
+  }
+
+  // 图片理解分析
+  var vBtn = document.getElementById('visionAnalyzeBtn');
+  if (vBtn) {
+    vBtn.addEventListener('click', function () {
+      var urlsEl = document.getElementById('visionUrls');
+      var promptEl = document.getElementById('visionPrompt');
+      var urlsRaw = urlsEl ? (urlsEl.value || '') : '';
+      var urls = urlsRaw.split(/\s+/).map(function (s) { return s.trim(); }).filter(function (s) { return s && /^https?:\/\//i.test(s); });
+      var prompt = promptEl ? (promptEl.value || '').trim() : '';
+      if (!urls.length) { toast('请先填写至少 1 张图片的 URL（https:// 开头）', 'warn'); return; }
+      if (!prompt) { toast('请先填写分析指令（可点击上方快捷模板）', 'warn'); return; }
+      var his = document.getElementById('visionHistory');
+      if (his) {
+        var userMsg = document.createElement('div');
+        userMsg.className = 'msg user';
+        var thumbs = '';
+        for (var ui = 0; ui < urls.length; ui++) {
+          thumbs += '<img src="' + escapeHtml(urls[ui]) + '" class="mm-thumb" alt="图' + (ui+1) + '" />';
+        }
+        userMsg.innerHTML = '<div class="msg-bubble">' +
+          (thumbs ? '<div class="mm-thumbs">' + thumbs + '</div>' : '') +
+          '<div class="mm-question">' + escapeHtml(prompt) + '</div>' +
+        '</div>';
+        his.appendChild(userMsg);
+        var placeholder = his.querySelector('.chat-placeholder');
+        if (placeholder) placeholder.remove();
+        var bot = document.createElement('div');
+        bot.className = 'msg ai mm-loading';
+        bot.innerHTML = '<div class="msg-bubble">🖼️ 千问 qwen-vl-plus 正在读图中…（通常 5-15 秒）</div>';
+        his.appendChild(bot);
+        his.scrollTop = his.scrollHeight;
+      }
+      vBtn.disabled = true; vBtn.classList.add('disabled');
+      var origText = vBtn.textContent;
+      vBtn.textContent = '分析中…';
+      api('/ai/vision_chat', {
+        method: 'POST',
+        body: JSON.stringify({ image_urls: urls, prompt: prompt })
+      }).then(function (r) {
+        var reply = (r && r.answer) || (r && r.message) || '（无返回内容）';
+        var usage = r && r.usage ? r.usage : null;
+        var model = r && r.model ? r.model : 'qwen-vl-plus';
+        var html = '<div class="mm-answer">' + renderMiniMd(reply) + '</div>';
+        html += '<div class="mm-foot-meta">模型：' + escapeHtml(model) + (usage ? ('　图像输入：' + (usage.image_count || urls.length) + ' 张　输入 tokens：' + (usage.input_tokens || '-') + '　输出 tokens：' + (usage.output_tokens || '-')) : '') + '</div>';
+        if (bot) {
+          bot.classList.remove('mm-loading');
+          bot.querySelector('.msg-bubble').innerHTML = html;
+        } else if (his) {
+          var x = document.createElement('div'); x.className = 'msg ai';
+          x.innerHTML = '<div class="msg-bubble">' + html + '</div>';
+          his.appendChild(x);
+        }
+        if (his) his.scrollTop = his.scrollHeight;
+        toast('图片分析完成', 'success');
+      }).catch(function (e) {
+        var errMsg = e && e.message ? e.message : '网络错误或未配置千问 Key（请先到「设置 - AI 配置」填写）';
+        if (bot) {
+          bot.classList.remove('mm-loading');
+          bot.querySelector('.msg-bubble').innerHTML = '❌ 分析失败：' + escapeHtml(errMsg);
+        }
+        toast('分析失败', 'error');
+      }).then(function () {
+        vBtn.disabled = false; vBtn.classList.remove('disabled');
+        vBtn.textContent = origText;
+      });
+    });
+  }
+
+  // 文生图
+  var tBtn = document.getElementById('ttiGenBtn');
+  if (tBtn) {
+    tBtn.addEventListener('click', function () {
+      var pEl = document.getElementById('ttiPrompt');
+      var sEl = document.getElementById('ttiSize');
+      var cEl = document.getElementById('ttiCount');
+      var prompt = pEl ? (pEl.value || '').trim() : '';
+      var size = sEl ? (sEl.value || '1024*1024') : '1024*1024';
+      var count = cEl ? (parseInt(cEl.value, 10) || 1) : 1;
+      if (!prompt) { toast('请先输入画面描述（可点击上方快捷模板）', 'warn'); return; }
+      var his = document.getElementById('ttiHistory');
+      if (his) {
+        var userMsg = document.createElement('div');
+        userMsg.className = 'msg user';
+        userMsg.innerHTML = '<div class="msg-bubble"><div class="mm-question">' + escapeHtml(prompt) + '</div>' +
+          '<div class="mm-foot-meta">尺寸：' + escapeHtml(size) + '　数量：' + count + ' 张</div>' +
+        '</div>';
+        his.appendChild(userMsg);
+        var placeholder = his.querySelector('.chat-placeholder');
+        if (placeholder) placeholder.remove();
+        var bot = document.createElement('div');
+        bot.className = 'msg ai mm-loading';
+        bot.innerHTML = '<div class="msg-bubble">🎨 通义万相 flux-schnell 正在生成…（通常 3-10 秒 / 张）</div>';
+        his.appendChild(bot);
+        his.scrollTop = his.scrollHeight;
+      }
+      tBtn.disabled = true; tBtn.classList.add('disabled');
+      var origText = tBtn.textContent;
+      tBtn.textContent = '生成中…';
+      api('/ai/text_to_image', {
+        method: 'POST',
+        body: JSON.stringify({ prompt: prompt, size: size, n: count })
+      }).then(function (r) {
+        var urls = (r && r.images && r.images.length) ? r.images : [];
+        var model = (r && r.model) ? r.model : 'flux-schnell';
+        if (!urls.length) {
+          if (bot) bot.querySelector('.msg-bubble').innerHTML = '❌ 未生成到图片：' + escapeHtml((r && r.error) || '未知错误');
+          toast('生成失败', 'error');
+          return;
+        }
+        var imgsHtml = '';
+        for (var ui = 0; ui < urls.length; ui++) {
+          imgsHtml += '<a href="' + escapeHtml(urls[ui]) + '" target="_blank" rel="noopener" class="mm-img-link">' +
+            '<img src="' + escapeHtml(urls[ui]) + '" alt="生成图' + (ui+1) + '" class="mm-gen-img" /></a>';
+        }
+        var tips = '<div class="mm-foot-meta">模型：' + escapeHtml(model) + '　数量：' + urls.length + ' 张　尺寸：' + escapeHtml(size) + '　（点击图片可放大，右键另存）</div>';
+        if (bot) {
+          bot.classList.remove('mm-loading');
+          bot.querySelector('.msg-bubble').innerHTML = '<div class="mm-imgs-grid">' + imgsHtml + '</div>' + tips;
+        }
+        if (his) his.scrollTop = his.scrollHeight;
+        toast('图片生成成功', 'success');
+      }).catch(function (e) {
+        var errMsg = e && e.message ? e.message : '网络错误或未配置千问 Key（请先到「设置 - AI 配置」填写）';
+        if (bot) {
+          bot.classList.remove('mm-loading');
+          bot.querySelector('.msg-bubble').innerHTML = '❌ 生成失败：' + escapeHtml(errMsg);
+        }
+        toast('生成失败', 'error');
+      }).then(function () {
+        tBtn.disabled = false; tBtn.classList.remove('disabled');
+        tBtn.textContent = origText;
+      });
+    });
+  }
 }
 
 function loadChatSessions() {
@@ -1797,7 +1969,8 @@ var TOOL_TITLE_MAP = {
   lesson_plan: { form: '· 教案生成参数 ·', result: '教案预览' },
   courseware: { form: '· 课件大纲生成参数 ·', result: '课件大纲预览' },
   homework: { form: '· 分层作业设计参数 ·', result: '作业设计预览' },
-  paper: { form: '· 教学小论文参数 ·', result: '论文提纲预览' }
+  paper: { form: '· 教学小论文参数 ·', result: '论文提纲预览' },
+  ppt: { form: '· PPT 演示文稿参数 ·', result: 'PPT 幻灯片预览' }
 };
 
 function bindToolsUI() {
@@ -1877,7 +2050,7 @@ function renderToolsHistory(list) {
     histUl.innerHTML = '<li class="empty-state small">暂无历史记录</li>';
     return;
   }
-  var typeName = { lesson_plan: '教案', courseware: '课件', homework: '作业', paper: '论文' };
+  var typeName = { lesson_plan: '教案', courseware: '课件', homework: '作业', paper: '论文', ppt: 'PPT' };
   var html = '';
   var max = Math.min(20, list.length);
   for (var i = 0; i < max; i++) {
@@ -1909,7 +2082,8 @@ function applyToolRunToResult(r) {
   var result = r.result || {};
   var md = typeof result === 'object' ? (result.markdown || '') : (result || '');
   var refs = typeof result === 'object' ? (result.refs || []) : [];
-  renderResultPanel(r.tool_type, r.title || '生成结果', md, refs);
+  var slides = (result && result.ppt_slides) ? result.ppt_slides : [];
+  renderResultPanel(r.tool_type, r.title || '生成结果', md, refs, slides);
   toast('已载入该历史结果', 'info');
 }
 
@@ -1957,7 +2131,8 @@ function generateToolResult() {
     setTimeout(function () { if (pg) pg.classList.add('hidden'); }, 1200);
     var md = (r && r.result && r.result.markdown) ? r.result.markdown : (r && r.result ? r.result : '');
     var refs = (r && r.result && r.result.refs) ? r.result.refs : (r && r.refs ? r.refs : []);
-    renderResultPanel(toolType, r ? (r.title || info.result) : info.result, md, refs);
+    var slides = (r && r.ppt_slides && r.ppt_slides.length) ? r.ppt_slides : ((r && r.result && r.result.ppt_slides) ? r.result.ppt_slides : []);
+    renderResultPanel(toolType, r ? (r.title || info.result) : info.result, md, refs, slides);
     toast('生成成功', 'success');
     loadTools();
   }).catch(function () {
@@ -1974,13 +2149,87 @@ function valOf(id, def) {
   return (v === null || v === undefined || v === '') ? def : v;
 }
 
-function renderResultPanel(toolType, title, md, refs) {
+function renderResultPanel(toolType, title, md, refs, slides) {
   var tEl = document.getElementById('toolsResultTitle');
   if (tEl) tEl.textContent = title;
   var body = document.getElementById('toolsResultBody');
   if (body) {
     body.setAttribute('data-raw-md', md || '');
     body.innerHTML = '';
+
+    // PPT 工具：顶部渲染幻灯片预览面板
+    if (toolType === 'ppt' && slides && slides.length) {
+      (function renderSlides() {
+        var wrap = document.createElement('div');
+        wrap.className = 'ppt-slides-wrap';
+        wrap.innerHTML = '<h3 style="margin:0 0 8px 0;">📽️ 幻灯片结构化预览（共 ' + slides.length + ' 页）</h3>';
+        var nav = document.createElement('div');
+        nav.className = 'ppt-slide-nav';
+        var stage = document.createElement('div');
+        stage.className = 'ppt-slide-stage';
+        var notesBox = document.createElement('div');
+        notesBox.className = 'ppt-slide-notes';
+        var cur = 0;
+
+        function render(i) {
+          if (i < 0) i = 0;
+          if (i >= slides.length) i = slides.length - 1;
+          cur = i;
+          var s = slides[i] || {};
+          var contentHtml = renderMiniMd(s.content || '（该页无内容）');
+          stage.innerHTML =
+            '<div class="ppt-slide-head"><span class="ppt-num">第 ' + (s.idx || (i+1)) + ' 页</span><span class="ppt-title">' + escapeHtml(s.title || '未命名') + '</span></div>' +
+            '<div class="ppt-slide-body">' + contentHtml + '</div>';
+          var note = '';
+          if (s.intent) note += '<div class="ppt-meta-line"><b>🎯 设计意图：</b>' + escapeHtml(s.intent) + '</div>';
+          if (s.notes) note += '<div class="ppt-meta-line"><b>🗒️ 讲师备注：</b>' + escapeHtml(s.notes).replace(/\n/g, '<br/>') + '</div>';
+          notesBox.innerHTML = note || '<div class="ppt-meta-line gray">该页暂无设计意图和讲师备注。</div>';
+          // nav
+          var navHtml = '';
+          for (var k = 0; k < slides.length; k++) {
+            var tt = (slides[k].title || ('第' + (slides[k].idx || (k+1)) + '页'));
+            navHtml += '<button data-i="' + k + '" class="ppt-pill' + (k === i ? ' active' : '') + '">' +
+              '<span class="pill-idx">' + (slides[k].idx || (k+1)) + '</span>' + escapeHtml(tt) +
+            '</button>';
+          }
+          navHtml += '<div style="display:flex;gap:8px;margin-top:10px;"><button class="btn outline small" id="ppt-prev">⬅ 上一页</button>' +
+            '<button class="btn outline small" id="ppt-next">下一页 ➡</button>' +
+            '<button class="btn primary small" id="ppt-export">⬇ 导出幻灯片 JSON</button></div>';
+          nav.innerHTML = navHtml;
+          var pills = nav.querySelectorAll('.ppt-pill');
+          for (var m = 0; m < pills.length; m++) {
+            pills[m].addEventListener('click', function () {
+              render(parseInt(this.getAttribute('data-i'), 10) || 0);
+            });
+          }
+          var pv = nav.querySelector('#ppt-prev');
+          if (pv) pv.addEventListener('click', function () { render(cur - 1); });
+          var nx = nav.querySelector('#ppt-next');
+          if (nx) nx.addEventListener('click', function () { render(cur + 1); });
+          var exp = nav.querySelector('#ppt-export');
+          if (exp) exp.addEventListener('click', function () {
+            var blob = new Blob([JSON.stringify({ title: title, slides: slides }, null, 2)], { type: 'application/json;charset=utf-8' });
+            var a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = (title || 'PPT') + '.slides.json';
+            a.click();
+            setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+            toast('已导出 slides.json', 'success');
+          });
+        }
+        wrap.appendChild(nav);
+        wrap.appendChild(stage);
+        wrap.appendChild(notesBox);
+        body.appendChild(wrap);
+        render(0);
+      })();
+
+      var sep = document.createElement('div');
+      sep.innerHTML = '<hr style="margin:18px 0 8px 0;border:none;border-top:1px dashed rgba(247,242,227,0.2);"/>' +
+        '<h3 style="margin:0 0 8px 0;">📄 完整 Markdown 文稿</h3>';
+      body.appendChild(sep);
+    }
+
     var lines = (md || '').split('\n');
     var inList = false;
     for (var i = 0; i < lines.length; i++) {
@@ -2063,6 +2312,43 @@ function renderInlineMarkdown(s) {
   return s;
 }
 
+// 简易多行 Markdown（仅用于幻灯片主体）
+function renderMiniMd(text) {
+  if (!text) return '';
+  var lines = String(text).split('\n');
+  var html = '';
+  var inList = false;
+  var listEl = '';
+  for (var i = 0; i < lines.length; i++) {
+    var ln = lines[i];
+    if (/^\s*$/.test(ln)) {
+      if (inList) { html += listEl; listEl = ''; inList = false; }
+      continue;
+    }
+    var m = ln.match(/^(#{1,6})\s+(.*)$/);
+    if (m) {
+      if (inList) { html += listEl; listEl = ''; inList = false; }
+      var lv = Math.min(6, Math.max(1, m[1].length + 1));
+      html += '<h' + lv + ' style="margin:6px 0;">' + renderInlineMarkdown(m[2]) + '</h' + lv + '>';
+      continue;
+    }
+    if (/^\s*>/.test(ln)) {
+      if (inList) { html += listEl; listEl = ''; inList = false; }
+      html += '<blockquote style="margin:4px 0;">' + renderInlineMarkdown(ln.replace(/^\s*>\s?/, '')) + '</blockquote>';
+      continue;
+    }
+    if (/^\s*([-*]|\d+\.)\s+/.test(ln)) {
+      if (!inList) { inList = true; listEl = /^\s*\d+\./.test(ln) ? '<ol style="margin:4px 0;">' : '<ul style="margin:4px 0;">'; }
+      listEl += '<li>' + renderInlineMarkdown(ln.replace(/^\s*([-*]|\d+\.)\s+/, '')) + '</li>';
+      continue;
+    }
+    if (inList) { html += listEl; listEl = ''; inList = false; }
+    html += '<p style="margin:3px 0;">' + renderInlineMarkdown(ln) + '</p>';
+  }
+  if (inList) html += listEl;
+  return html;
+}
+
 /* ============================================================
  * 13. 设置 settings
  * ============================================================ */
@@ -2120,6 +2406,7 @@ function loadSettings() {
     setVal('s-deepseek-key', '');
     setVal('s-openai-key', '');
     setVal('s-zhipu-key', '');
+    setVal('s-dashscope-key', '');
     refreshAbout();
   }).catch(function () {});
 }
@@ -2162,15 +2449,19 @@ function saveAIKeys() {
   var dk = document.getElementById('s-deepseek-key').value || '';
   var ok = document.getElementById('s-openai-key').value || '';
   var zk = document.getElementById('s-zhipu-key').value || '';
+  var dsk = document.getElementById('s-dashscope-key') ? (document.getElementById('s-dashscope-key').value || '') : '';
   var queue = [];
   // DeepSeek Key：两种命名都支持（先存 deepseek_api_key，再存 openai_api_key 给兼容实现）
   if (dk) {
-    // 若用户输入了 sk-*：同时覆盖 deepseek_api_key 和 openai_api_key
     queue.push(['deepseek_api_key', dk]);
     queue.push(['openai_api_key', dk]);
   }
   if (ok) queue.push(['openai_api_key', ok]);
   if (zk) queue.push(['zhipu_api_key', zk]);
+  if (dsk) {
+    queue.push(['dashscope_api_key', dsk]);
+    queue.push(['qwen_api_key', dsk]);
+  }
   if (queue.length === 0) {
     toast('本次未修改任何 Key（密码框保持空代表不更改）', 'warn');
     return;
@@ -2183,6 +2474,7 @@ function saveAIKeys() {
       setVal('s-deepseek-key', '');
       setVal('s-openai-key', '');
       setVal('s-zhipu-key', '');
+      setVal('s-dashscope-key', '');
       return;
     }
     var p = queue[i++];

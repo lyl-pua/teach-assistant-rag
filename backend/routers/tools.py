@@ -19,18 +19,18 @@ from db import (
 
 router = APIRouter(prefix="")
 
-ALLOWED_TYPES = {"lesson_plan", "courseware", "homework", "paper"}
+ALLOWED_TYPES = {"lesson_plan", "courseware", "homework", "paper", "ppt"}
 
 # Token 优化：按 tool_type 精细化 max_tokens，避免一刀切浪费
 # lesson_plan 结构复杂（目标/重难点/过程/板书/反思）需较多 token
 # paper 论文需最长
-# courseware 课件大纲每页要点简短
-# homework 分层作业相对短
+# ppt 演示文稿需要输出 15-22 页 * 每页要点，长度约等于教案
 TOOL_MAX_TOKENS = {
     "lesson_plan": 3000,
     "courseware": 2000,
     "homework": 1500,
     "paper": 3500,
+    "ppt": 3000,
 }
 
 
@@ -108,6 +108,18 @@ def _build_prompt_and_title(body: ToolGenerate, refs_text: str) -> tuple[str, st
             "# 五、结论与建议\n"
             "# 参考文献格式示例（至少 5 条）\n"
         )
+    elif tool == "ppt":
+        title = f"PPT 演示文稿：{grade} {topic}"
+        prompt = (
+            base_intro
+            + "请编写一份 PPT 演示文稿大纲，共 15-22 页，使用 Markdown 输出，并严格按以下格式：\n"
+            "- 每一页以二级标题开头：## 第1页 · 标题（或 ## 第2页 · 标题）\n"
+            "- 每页正文写 3-6 条要点（- 开头），语言清晰，适合课堂投影；\n"
+            "- 每页正文后，用「> 讲师备注：……」给出教师备注；\n"
+            "- 结构建议：封面(1页) / 目录(1页) / 情境导入(1-2页) / 新知讲解(6-10页) / 互动练习(2-3页) / 总结升华(1页) / 作业布置(1页) / 板书回顾(1页) / 封底致谢(1页)；\n"
+            "- 标题需贴合课文主题，每页可给出「设计意图：……」，用于体现教学思路。\n"
+            "禁止输出封面、目录以外的重复页；总页数不低于 15、不高于 22。"
+        )
     else:
         raise HTTPException(400, f"不支持的 tool_type: {tool}")
     return prompt, title
@@ -157,6 +169,62 @@ def _retrieve_for_tool(body: ToolGenerate):
         parts.append(f"【资料{i}·{name}】\n{text}")
     ref_block = "\n\n".join(parts)
     return chunks, refs, ref_block
+
+
+# =========== PPT Markdown → 结构化 slides ===========
+def _parse_ppt_slides(markdown_text: str) -> list:
+    """
+    将 PPT 的 Markdown 文本拆成结构化的页列表：
+    [{"idx": 1, "title": "封面", "content": "...", "notes": "...", "intent": "..."}]
+    """
+    import re as _re
+    if not markdown_text:
+        return []
+    slides: list = []
+    # 按 "## 第N页 · 标题" 或 "## 第 N 页 · 标题" 切分
+    pattern = _re.compile(r"^\s*##\s*第\s*(\d+)\s*页\s*[·\-\:：]\s*(.+?)\s*$", _re.M)
+    matches = list(pattern.finditer(markdown_text))
+    if not matches:
+        # 兜底：按任意 H2 切
+        pattern2 = _re.compile(r"^\s*##\s*(.+?)\s*$", _re.M)
+        matches2 = list(pattern2.finditer(markdown_text))
+        for i, m in enumerate(matches2, 1):
+            start = m.end()
+            end = matches2[i].start() if i < len(matches2) else len(markdown_text)
+            body = markdown_text[start:end].strip(" \n\r\t-")
+            slides.append(_body_to_slide(i, m.group(1).strip(), body))
+        return slides
+    for i, m in enumerate(matches, 1):
+        idx = int(m.group(1))
+        title = m.group(2).strip()
+        start = m.end()
+        end = matches[i].start() if i < len(matches) else len(markdown_text)
+        body = markdown_text[start:end].strip(" \n\r\t-")
+        slides.append(_body_to_slide(idx, title, body))
+    return slides
+
+
+def _body_to_slide(idx, title, body: str) -> dict:
+    import re as _re
+    notes_match = _re.search(r">[\s　]*讲师备注[:：]?(.+?)(?=\n(?:>|$))", body, _re.S)
+    intent_match = _re.search(r"设计意图[:：]\s*(.+?)(?=\n(?:[-*]|>|$))", body, _re.S)
+    notes = (notes_match.group(1).strip().replace("\n> ", "\n") if notes_match else "")
+    intent = (intent_match.group(1).strip() if intent_match else "")
+    # 去除备注与设计意图后的主体内容
+    clean = body
+    if notes_match:
+        clean = clean[:notes_match.start()] + clean[notes_match.end():]
+    if intent_match:
+        clean = clean[:intent_match.start()] + clean[intent_match.end():]
+    # 移除多余空行
+    clean = "\n".join([ln.rstrip() for ln in clean.splitlines() if ln.strip()])
+    return {
+        "idx": int(idx),
+        "title": title,
+        "content": clean,
+        "notes": notes,
+        "intent": intent,
+    }
 
 
 # =========== 模板结果（无 Key 时使用）===========
@@ -218,6 +286,26 @@ def _fallback_result(body: ToolGenerate, refs: list) -> str:
             "## 五、结论与建议",
             "## 参考文献",
         ]
+    elif tool == "ppt":
+        sections = [f"# PPT 演示文稿：《{topic}》（{grade}）"]
+        ppt_template = [
+            ("封面", f"教材/学科：{subject}　年级：{grade}　单元：{unit}\n授课教师：教师姓名　日期："),
+            ("目录", "1. 情境导入  2. 新知讲解  3. 互动练习  4. 总结升华  5. 作业布置"),
+            ("情境导入", "设计意图：用贴近学生生活的情境或问题引入课题\n- 展示情境图 / 播放音频片段\n- 引导 2-3 名学生发言"),
+            ("新知一", "设计意图：搭建基础概念\n- 要点一\n- 要点二\n- 易错点提醒\n> 讲师备注：强调板书同步"),
+            ("新知二", "设计意图：深化理解，结合案例\n- 要点一\n- 要点二\n- 小组讨论 1 分钟\n> 讲师备注：点名展示"),
+            ("新知三", "设计意图：联系生活/旧知\n- 要点一\n- 要点二\n- 跨学科延伸\n> 讲师备注：可播放短视频"),
+            ("新知四", "设计意图：突破难点\n- 难点拆解 1\n- 难点拆解 2\n- 分层操练\n> 讲师备注：巡视学困生"),
+            ("新知五", "设计意图：拓展拔高（选学）\n- 拓展要点一\n- 拓展要点二"),
+            ("互动练习一", "设计意图：课堂双基巩固\n- 题 1（基础）\n- 题 2（辨析）\n- 答案与讲评"),
+            ("互动练习二", "设计意图：分层应用\n- A 层：口述\n- B 层：书写\n- C 层：创编\n> 讲师备注：时间控制 3 分钟"),
+            ("总结升华", "设计意图：结构化回顾 + 情感升华\n- 本课知识点串讲（3-5 条）\n- 学科素养/情感点题"),
+            ("作业布置", "设计意图：对应分层作业设计\n- A 基础题（必做）\n- B 提高题（选做）\n- C 拓展实践（选做）"),
+            ("板书回顾", "设计意图：呈现完整板书结构，利于课后整理笔记\n- 板书主体骨架\n- 关键公式/名句\n- 易错点标注"),
+            ("封底致谢", "感谢聆听！\n敬请评委老师批评指正"),
+        ]
+        for i, (t, c) in enumerate(ppt_template, 1):
+            sections.append(f"## 第{i}页 · {t}\n{c}")
     result = header + "\n\n".join(sections)
     if refs:
         result += "\n\n---\n## 知识库检索摘要（{len(refs)} 条）\n"
@@ -289,6 +377,14 @@ def generate_tool(body: ToolGenerate):
         "extra": body.extra,
         "refs": refs,
     }
+    # PPT 工具：解析结构化页数组，便于前端渲染 / 转 PPTX
+    ppt_slides = []
+    if body.tool_type == "ppt":
+        try:
+            ppt_slides = _parse_ppt_slides(result_text)
+            result_payload["ppt_slides"] = ppt_slides
+        except Exception:
+            ppt_slides = []
     with get_cursor(commit=True) as cur:
         cur.execute(
             "INSERT INTO tool_runs(tool_type, title, prompt, result, created_at) VALUES(?,?,?,?,?)",
@@ -302,4 +398,5 @@ def generate_tool(body: ToolGenerate):
         "result": result_payload,
         "refs": refs,
         "model_used": model_used,
+        **({"ppt_slides": ppt_slides} if ppt_slides else {}),
     }
