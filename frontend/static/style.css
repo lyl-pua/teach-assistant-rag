@@ -2168,51 +2168,64 @@ input, textarea, select { font-family: inherit; color: inherit; }
   color: #d5e8dd !important;
 }
 
-/* PPT 幻灯片预览 */
+/* PPT 幻灯片预览 · 玻璃拟态国风版 */
 .ppt-slides-wrap {
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.06);
-  border-radius: 14px;
-  padding: 16px 18px;
-  margin-bottom: 4px;
+  background: linear-gradient(135deg, rgba(255,255,255,0.04), rgba(31,53,47,0.25));
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 18px;
+  padding: 18px 20px;
+  margin-bottom: 6px;
   display: grid;
-  grid-template-columns: 220px 1fr;
+  grid-template-columns: 236px 1fr;
   grid-template-rows: auto auto;
   grid-template-areas:
     "nav  stage"
     "nav  notes";
-  gap: 14px;
+  gap: 16px;
+  backdrop-filter: blur(6px);
 }
 .ppt-slide-nav {
   grid-area: nav;
-  max-height: 520px;
+  max-height: 560px;
   overflow-y: auto;
   padding-right: 4px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 7px;
+  scrollbar-width: thin;
+}
+.ppt-slide-nav::-webkit-scrollbar { width: 6px; }
+.ppt-slide-nav::-webkit-scrollbar-thumb {
+  background: rgba(124,201,163,0.25);
+  border-radius: 6px;
 }
 .ppt-pill {
   display: flex;
   align-items: flex-start;
   gap: 8px;
   text-align: left;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(255,255,255,0.08);
-  background: rgba(255,255,255,0.02);
-  color: rgba(247,242,227,0.78);
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.03);
+  color: rgba(247,242,227,0.8);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.25s ease;
   font-size: 12.5px;
-  line-height: 1.5;
+  line-height: 1.55;
+  backdrop-filter: blur(4px);
 }
-.ppt-pill:hover { border-color: rgba(124,201,163,0.3); color: #7CC9A3; }
+.ppt-pill:hover {
+  border-color: rgba(124,201,163,0.35);
+  background: rgba(124,201,163,0.08);
+  color: #9FD9BB;
+  transform: translateY(-1px);
+}
 .ppt-pill.active {
-  background: linear-gradient(135deg, #2A5047, #4A8274);
+  background: linear-gradient(135deg, rgba(42,80,71,0.92), rgba(74,130,116,0.88));
   color: #F7F2E3;
-  border-color: transparent;
-  box-shadow: 0 3px 8px rgba(0,0,0,0.25);
+  border-color: rgba(230,215,174,0.5);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.1);
 }
 .pill-idx {
   flex-shrink: 0;
@@ -2220,91 +2233,276 @@ input, textarea, select { font-family: inherit; color: inherit; }
   align-items: center; justify-content: center;
   width: 24px; height: 24px;
   border-radius: 50%;
-  background: rgba(0,0,0,0.22);
+  background: rgba(0,0,0,0.25);
   color: #E6D7AE;
   font-size: 11px;
   font-weight: 700;
+  border: 1px solid rgba(230,215,174,0.15);
 }
+
+/* ——— 舞台：玻璃拟态国风底（月白 + 水墨渐变）——— */
 .ppt-slide-stage {
   grid-area: stage;
-  min-height: 300px;
+  min-height: 320px;
+  position: relative;
   background:
-    linear-gradient(135deg, rgba(247,242,227,0.98), rgba(230,215,174,0.92)),
-    repeating-linear-gradient(45deg, rgba(165,106,59,0.04) 0 12px, transparent 12px 24px);
-  border: 1px solid rgba(165,106,59,0.22);
-  border-radius: 10px;
-  padding: 20px 26px;
-  color: #3A2F1E;
-  box-shadow: inset 0 0 30px rgba(165,106,59,0.08), 0 4px 14px rgba(0,0,0,0.22);
+    radial-gradient(1200px 600px at 80% -20%, rgba(42,80,71,0.14), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(165,106,59,0.14), transparent 60%),
+    linear-gradient(135deg, rgba(255,252,244,0.98), rgba(247,242,227,0.94) 55%, rgba(230,215,174,0.88));
+  border: 1px solid rgba(255,255,255,0.7);
+  border-radius: 14px;
+  padding: 22px 28px;
+  color: #2A3238;
+  box-shadow:
+    inset 0 0 40px rgba(255,255,255,0.35),
+    inset 0 0 0 1px rgba(255,255,255,0.4),
+    0 10px 30px rgba(0,0,0,0.18);
   aspect-ratio: 16 / 9;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
+.ppt-slide-stage::before {
+  /* 宣纸纹理叠加 */
+  content: "";
+  position: absolute; inset: 0;
+  background-image:
+    repeating-linear-gradient(45deg, rgba(165,106,59,0.04) 0 2px, transparent 2px 7px),
+    repeating-linear-gradient(-45deg, rgba(42,80,71,0.03) 0 2px, transparent 2px 9px);
+  mix-blend-mode: multiply;
+  opacity: 0.55;
+  pointer-events: none;
+  border-radius: 14px;
+}
+.ppt-slide-stage::after {
+  /* 低多边形装饰点（右上） */
+  content: "";
+  position: absolute; top: 10px; right: 16px;
+  width: 120px; height: 80px;
+  background:
+    radial-gradient(circle at 80% 30%, rgba(42,80,71,0.22) 0 3px, transparent 4px),
+    radial-gradient(circle at 55% 60%, rgba(165,106,59,0.22) 0 2px, transparent 3px),
+    radial-gradient(circle at 30% 20%, rgba(131,63,33,0.18) 0 2px, transparent 3px);
+  opacity: 0.75;
+  pointer-events: none;
+}
+
 .ppt-slide-head {
+  position: relative;
   display: flex;
   align-items: baseline;
-  gap: 12px;
-  padding-bottom: 10px;
-  margin-bottom: 12px;
-  border-bottom: 2px solid rgba(165,106,59,0.3);
-  font-family: 'STFangsong', 'FangSong', serif;
+  gap: 14px;
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+  border-bottom: 1.5px solid rgba(165,106,59,0.35);
+  font-family: 'STFangsong', 'FangSong', 'SimSun', serif;
 }
 .ppt-num {
   font-size: 12px;
-  color: #833F21;
-  background: rgba(165,106,59,0.12);
-  border: 1px solid rgba(165,106,59,0.22);
+  color: #fff;
+  background: linear-gradient(135deg, #2A5047, #4A8274);
+  border: 1px solid rgba(255,255,255,0.6);
   border-radius: 999px;
-  padding: 2px 10px;
+  padding: 3px 12px;
   letter-spacing: 1px;
+  box-shadow: 0 2px 6px rgba(42,80,71,0.25);
 }
 .ppt-title {
-  font-size: 22px;
+  font-size: 23px;
   font-weight: 700;
   letter-spacing: 1.5px;
-  color: #5A3F22;
+  background: linear-gradient(90deg, #2A5047 0%, #5A3F22 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.5);
 }
+.ppt-anim-tag {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: #5A3F22;
+  background: rgba(255,255,255,0.55);
+  border: 1px solid rgba(165,106,59,0.3);
+  padding: 2px 10px;
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+}
+
 .ppt-slide-body {
+  position: relative;
   flex: 1;
   overflow: auto;
   font-size: 15px;
-  line-height: 1.85;
+  line-height: 1.88;
+  z-index: 1;
+}
+.ppt-slide-body::-webkit-scrollbar { width: 6px; }
+.ppt-slide-body::-webkit-scrollbar-thumb {
+  background: rgba(165,106,59,0.3);
+  border-radius: 6px;
 }
 .ppt-slide-body h1, .ppt-slide-body h2, .ppt-slide-body h3 {
-  color: #5A3F22;
+  color: #2A5047;
   font-family: 'STFangsong', 'FangSong', serif;
   letter-spacing: 1.2px;
+  margin: 6px 0 8px 0;
 }
+.ppt-slide-body h3 { font-size: 16.5px; }
+.ppt-slide-body h2 { font-size: 18px; }
+.ppt-slide-body h1 { font-size: 20px; }
+
+/* ——— 玻璃卡片（引用块） ——— */
 .ppt-slide-body blockquote {
-  border-left: 3px solid #A56A3B;
-  padding: 4px 10px;
-  background: rgba(165,106,59,0.08);
-  border-radius: 4px;
-  color: #5A3F22;
+  margin: 8px 0;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, rgba(255,255,255,0.72), rgba(255,255,255,0.52));
+  backdrop-filter: blur(10px) saturate(150%);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  border: 1px solid rgba(255,255,255,0.75);
+  border-left: 3px solid #2A5047;
+  border-radius: 12px;
+  color: #2A3238;
+  box-shadow:
+    0 4px 14px rgba(31,53,47,0.08),
+    inset 0 1px 0 rgba(255,255,255,0.8);
+  animation: glassFade 0.55s cubic-bezier(.2,.7,.2,1) both;
 }
+.ppt-slide-body blockquote + blockquote { animation-delay: 0.08s; }
+.ppt-slide-body blockquote + * + blockquote { animation-delay: 0.16s; }
+
+/* 玻璃卡片细边点缀色（按内容含关键字符） */
+.ppt-slide-body blockquote:nth-child(3n+1) { border-left-color: #2A5047; }  /* 青黛 */
+.ppt-slide-body blockquote:nth-child(3n+2) { border-left-color: #833F21; }  /* 朱砂 */
+.ppt-slide-body blockquote:nth-child(3n+3) { border-left-color: #5A3F22; }  /* 茶褐 */
+
+/* 加粗：镂空字 / 边框修饰效果 */
+.ppt-slide-body strong {
+  display: inline-block;
+  padding: 1px 7px;
+  margin: 0 1px;
+  color: #fff;
+  background: linear-gradient(135deg, #2A5047 0%, #4A8274 100%);
+  border: 1px solid rgba(255,255,255,0.7);
+  border-radius: 6px;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.5) inset,
+    0 2px 4px rgba(42,80,71,0.25);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+/* 列表：玻璃子弹 */
+.ppt-slide-body ul, .ppt-slide-body ol { padding-left: 1.2em; }
+.ppt-slide-body li {
+  margin: 4px 0;
+  padding: 4px 10px 4px 10px;
+  background: rgba(255,255,255,0.25);
+  border: 1px solid rgba(42,80,71,0.1);
+  border-radius: 8px;
+  backdrop-filter: blur(4px);
+  animation: lineFade 0.4s ease both;
+}
+.ppt-slide-body li:nth-child(1) { animation-delay: 0.05s; }
+.ppt-slide-body li:nth-child(2) { animation-delay: 0.12s; }
+.ppt-slide-body li:nth-child(3) { animation-delay: 0.20s; }
+.ppt-slide-body li:nth-child(4) { animation-delay: 0.28s; }
+.ppt-slide-body li:nth-child(5) { animation-delay: 0.36s; }
+.ppt-slide-body li:nth-child(6) { animation-delay: 0.44s; }
+.ppt-slide-body li:nth-child(7) { animation-delay: 0.52s; }
+
+/* 代码块：保留高亮 */
+.ppt-slide-body code {
+  background: rgba(165,106,59,0.1);
+  color: #5A3F22;
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-size: 0.95em;
+  border: 1px solid rgba(165,106,59,0.2);
+}
+
+/* 原文双栏布局（匹配 skill 的『左栏原文 / 右栏注释』）*/
+.ppt-two-col {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 12px;
+}
+.ppt-two-col blockquote {
+  margin: 0;
+  height: 100%;
+}
+.ppt-col-title {
+  display: inline-block;
+  font-size: 12.5px;
+  letter-spacing: 1px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgba(42,80,71,0.1);
+  color: #2A5047;
+  border: 1px solid rgba(42,80,71,0.2);
+  margin-bottom: 6px;
+  font-weight: 700;
+}
+.ppt-col-title.accent {
+  background: rgba(165,106,59,0.1);
+  color: #5A3F22;
+  border-color: rgba(165,106,59,0.2);
+}
+
+/* 逐行淡入 + 呼吸强调动画 */
+@keyframes glassFade {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); filter: blur(2px); }
+  to   { opacity: 1; transform: translateY(0) scale(1);    filter: blur(0); }
+}
+@keyframes lineFade {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes breathe {
+  0%,100% { text-shadow: 0 0 0 rgba(131,63,33,0); transform: scale(1); }
+  50%     { text-shadow: 0 0 12px rgba(131,63,33,0.35); transform: scale(1.02); }
+}
+.ppt-slide-body .breathe {
+  animation: breathe 2.6s ease-in-out infinite;
+  color: #833F21;
+  font-weight: 700;
+}
+
 .ppt-slide-notes {
   grid-area: notes;
-  background: rgba(247,242,227,0.05);
-  border: 1px dashed rgba(255,255,255,0.1);
-  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(31,53,47,0.5), rgba(165,106,59,0.12));
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
   padding: 12px 16px;
   font-size: 13px;
-  color: rgba(247,242,227,0.82);
-  line-height: 1.85;
+  color: rgba(247,242,227,0.88);
+  line-height: 1.9;
+  backdrop-filter: blur(6px);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
 }
-.ppt-meta-line { margin-bottom: 6px; }
-.ppt-meta-line.gray { color: rgba(247,242,227,0.4); }
+.ppt-meta-line {
+  margin-bottom: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.05);
+}
+.ppt-meta-line b { color: #E6D7AE; font-weight: 700; }
+.ppt-meta-line.gray {
+  color: rgba(247,242,227,0.4);
+  background: transparent;
+  border: 1px dashed rgba(255,255,255,0.08);
+}
 
 @media (max-width: 1100px) {
   .ppt-slides-wrap { grid-template-columns: 1fr; grid-template-areas: "stage" "nav" "notes"; }
   .ppt-slide-nav { max-height: 240px; }
   .ppt-title { font-size: 18px; }
+  .ppt-two-col { grid-template-columns: 1fr; }
 }
 @media (max-width: 768px) {
   .ppt-slide-stage { aspect-ratio: 4 / 3; padding: 14px 16px; min-height: 220px; }
   .ppt-title { font-size: 15px; letter-spacing: 1px; }
-  .assistant-tab { padding: 7px 12px; font-size: 12px; }
-  .mm-imgs-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  .ppt-anim-tag { display: none; }
 }
 
 /* ================= 响应式 ================= */

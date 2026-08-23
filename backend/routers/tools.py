@@ -1,12 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-工具调用（教案/课件/作业/论文）
+工具调用（教案/课件/作业/论文/PPT）
 """
+import io
 import json
+import re as _re
 from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 import config
@@ -112,13 +115,47 @@ def _build_prompt_and_title(body: ToolGenerate, refs_text: str) -> tuple[str, st
         title = f"PPT 演示文稿：{grade} {topic}"
         prompt = (
             base_intro
-            + "请编写一份 PPT 演示文稿大纲，共 15-22 页，使用 Markdown 输出，并严格按以下格式：\n"
-            "- 每一页以二级标题开头：## 第1页 · 标题（或 ## 第2页 · 标题）\n"
-            "- 每页正文写 3-6 条要点（- 开头），语言清晰，适合课堂投影；\n"
-            "- 每页正文后，用「> 讲师备注：……」给出教师备注；\n"
-            "- 结构建议：封面(1页) / 目录(1页) / 情境导入(1-2页) / 新知讲解(6-10页) / 互动练习(2-3页) / 总结升华(1页) / 作业布置(1页) / 板书回顾(1页) / 封底致谢(1页)；\n"
-            "- 标题需贴合课文主题，每页可给出「设计意图：……」，用于体现教学思路。\n"
-            "禁止输出封面、目录以外的重复页；总页数不低于 15、不高于 22。"
+            + "你是资深语文教学 PPT 设计师。请输出 14-20 页的 Markdown‑PPT，严格按如下全部规范：\n\n"
+            "【输出结构 · 每页固定格式】\n"
+            "- 每一页必须以 ## 第N页 · 标题 开头（N 为页码，从 1 开始）。\n"
+            "- 每页正文后都要写：> 讲师备注：……（给老师口述上课提示）。\n"
+            "- 每页正文后都要写：设计意图：……（一句话说明教学思路）。\n"
+            "- 每页正文末尾写：动画：[本页动画配置]（从『进入 / 强调 / 退出 / 动作路径』中选，如：玻璃卡片逐张淡入、古诗文逐行浮现、重点句呼吸闪烁、目录平滑淡入等）。\n"
+            "- 禁止一页塞入整篇课文；千字长文自动拆成多页「课文原文」幻灯片。\n"
+            "- 正文中的引用块符号 `>` 代表磨砂毛玻璃卡片容器，知识点、注释、提问、赏析都要用 `> 内容` 包裹，体现玻璃拟态视觉。\n\n"
+            "【固定页面结构 · 语文课文精讲模板】\n"
+            "1) 封面页：玻璃拟态大标题 + 副标题（学科/年级/课时）。\n"
+            "2) 目录页：磨砂玻璃导航卡片（3-6 个章节）。\n"
+            "3) 课程导入页：情景图文 + 引导提问（玻璃卡片）。\n"
+            "4) 课文原文展示页（长文自动分页，至少 2-4 页）：双栏玻璃布局——左栏放原文，右栏放词句注释批注；每行诗句独立成行。\n"
+            "5) 赏析解读页（3-5 页）：多张玻璃卡片拆解文学手法、主旨分析、结构脉络、作者背景；重点词句请使用 **加粗** 或『镂空字/边框修饰』提示。\n"
+            "6) 重点字词页：字词释义玻璃卡片，标注拼音、释义、易错点。\n"
+            "7) 课堂探究 / 拓展思考页：开放性提问卡片。\n"
+            "8) 课堂小结页：知识汇总思维导图式要点。\n"
+            "9) 作业布置页：A 基础 / B 提高 / C 拓展 分层。\n"
+            "10) 结束致谢页。\n"
+            "其余页数按需要在 赏析 / 互动 / 练习 之间插入，总页数控制在 14-20 之间。\n\n"
+            "【视觉风格 · 玻璃拟态国风】\n"
+            "- 主色调：青黛、墨蓝、茶褐、月白、朱砂点缀。\n"
+            "- 背景意象：低多边形星空肌理 / 淡水墨山水 / 宣纸纹理（用文字提示即可）。\n"
+            "- 字体气质：封面标题粗犷书法力量感；正文赏析雅黑；古诗文原文宋体/风雅宋；重点字镂空字、外边框修饰、色彩高亮。\n"
+            "- 装饰：简约水墨线条、低多边形几何，拒绝花哨。\n\n"
+            "【长文本拆分硬约束】\n"
+            "- 原文每 4-6 句（或每一个完整段落）拆一页，每页附相应注释批注。\n"
+            "- 重点名句自动放入独立『名句赏析』玻璃卡片。\n\n"
+            "示例正文写法：\n"
+            "## 第4页 · 课文原文（一）\n"
+            "> 【原文左栏】\n"
+            "> 庆历四年春，滕子京谪守巴陵郡。\n"
+            "> 越明年，政通人和，百废具兴。\n"
+            "> \n"
+            "> 【注释右栏】\n"
+            "> 谪：贬官。政通人和：政事顺利，百姓和乐。\n"
+            "- 写作技法：开门见山，叙作记缘由。\n"
+            "设计意图：先读准字音与节奏，扫清字词障碍。\n"
+            "> 讲师备注：齐读一遍，点 2 名同学读单句正音。\n"
+            "动画：原文逐行顺序浮现 + 注释玻璃卡片淡入。\n\n"
+            "请直接输出 PPT Markdown，不需要额外开场白。"
         )
     else:
         raise HTTPException(400, f"不支持的 tool_type: {tool}")
@@ -206,24 +243,46 @@ def _parse_ppt_slides(markdown_text: str) -> list:
 
 def _body_to_slide(idx, title, body: str) -> dict:
     import re as _re
-    notes_match = _re.search(r">[\s　]*讲师备注[:：]?(.+?)(?=\n(?:>|$))", body, _re.S)
-    intent_match = _re.search(r"设计意图[:：]\s*(.+?)(?=\n(?:[-*]|>|$))", body, _re.S)
-    notes = (notes_match.group(1).strip().replace("\n> ", "\n") if notes_match else "")
+    # 讲师备注（兼容中文冒号 / 多行引用块续行）
+    notes_match = _re.search(
+        r"(?:^|\n)\s*>?[\s　]*讲师备注[:：]?\s*([\s\S]*?)(?=\n\s*(?:[-*]|>|设计意图|动画：|动画\s*[:：]|$))",
+        body, _re.M,
+    )
+    intent_match = _re.search(
+        r"(?:^|\n)\s*设计意图[:：]\s*([\s\S]*?)(?=\n\s*(?:[-*]|>|讲师备注|动画：|动画\s*[:：]|$))",
+        body, _re.M,
+    )
+    anim_match = _re.search(
+        r"(?:^|\n)\s*动画\s*[:：]\s*\[?([^\n\]]+)\]?",
+        body, _re.M,
+    )
+    notes = (notes_match.group(1).strip().replace("\n> ", "\n").replace("\n>", "\n")
+             if notes_match else "")
     intent = (intent_match.group(1).strip() if intent_match else "")
-    # 去除备注与设计意图后的主体内容
+    anim = (anim_match.group(1).strip(" 　[]\n") if anim_match else "")
+    # 去除备注、设计意图、动画行
     clean = body
-    if notes_match:
-        clean = clean[:notes_match.start()] + clean[notes_match.end():]
-    if intent_match:
-        clean = clean[:intent_match.start()] + clean[intent_match.end():]
-    # 移除多余空行
-    clean = "\n".join([ln.rstrip() for ln in clean.splitlines() if ln.strip()])
+    for _m in [anim_match, notes_match, intent_match]:
+        if _m:
+            clean = clean[:_m.start()] + clean[_m.end():]
+    # 移除多余空行，但保留 > 引用块行（玻璃卡片）
+    cleaned_lines = []
+    for ln in clean.splitlines():
+        s = ln.rstrip()
+        if not s.strip():
+            # 最多保留一个空行
+            if cleaned_lines and cleaned_lines[-1] != "":
+                cleaned_lines.append("")
+            continue
+        cleaned_lines.append(s)
+    clean = "\n".join(cleaned_lines).strip("\n")
     return {
         "idx": int(idx),
         "title": title,
         "content": clean,
         "notes": notes,
         "intent": intent,
+        "animation": anim,
     }
 
 
@@ -400,3 +459,768 @@ def generate_tool(body: ToolGenerate):
         "model_used": model_used,
         **({"ppt_slides": ppt_slides} if ppt_slides else {}),
     }
+
+
+# =========== PPT 导出为 .pptx（python-pptx 16:9）===========
+def _safe_filename(s: str, default: str = "教学演示文稿") -> str:
+    s = (s or default).strip()
+    s = _re.sub(r'[\\/:*?"<>|\r\n\t]+', "_", s)
+    s = s.strip(" ._")
+    return s[:80] or default
+
+
+def _markdown_to_plain_lines(md: str, max_bullets: int = 6):
+    """把每页 markdown 主体拆成适合 PPT 的要点行。返回 (lines, has_bullets)。"""
+    if not md:
+        return [], False
+    out = []
+    had_bullet = False
+    for ln in str(md).splitlines():
+        ln = ln.rstrip()
+        if not ln.strip():
+            continue
+        # 去掉 markdown heading
+        m = _re.match(r"^\s*#{1,6}\s*(.*)$", ln)
+        if m:
+            out.append(("title", m.group(1).strip()))
+            continue
+        # 引用
+        if ln.lstrip().startswith(">"):
+            out.append(("quote", ln.lstrip()[1:].strip()))
+            continue
+        # 列表
+        m2 = _re.match(r"^\s*(?:[-*]|\d+\.)\s+(.*)$", ln)
+        if m2:
+            had_bullet = True
+            out.append(("bullet", m2.group(1).strip()))
+            continue
+        out.append(("para", ln.strip()))
+    # 限制要点数（避免一页塞太满）
+    if max_bullets and len(out) > max_bullets:
+        out = out[:max_bullets]
+    return out, had_bullet
+
+
+def _render_markdown_into_tf(tf, text: str):
+    """按最小 Markdown（**粗体**、`code`）渲染到 python-pptx TextFrame。"""
+    from pptx.util import Pt
+    from pptx.enum.text import PP_ALIGN
+    text = text or ""
+    # 把 **xxx** 替换成占位符，保证按段换行
+    lines = text.split("\n") if text else [""]
+    first_paragraph_done = False
+    for ln in lines:
+        if first_paragraph_done:
+            p = tf.add_paragraph()
+        else:
+            p = tf.paragraphs[0]
+            first_paragraph_done = True
+        # 解析 **bold** 与 `code`：以正则分段
+        tokens = []
+        pattern = _re.compile(r"(\*\*[^*]+\*\*|`[^`]+`)")
+        last = 0
+        for mt in pattern.finditer(ln):
+            if mt.start() > last:
+                tokens.append(("plain", ln[last:mt.start()]))
+            span = mt.group(0)
+            if span.startswith("`"):
+                tokens.append(("code", span[1:-1]))
+            else:
+                tokens.append(("bold", span[2:-2]))
+            last = mt.end()
+        if last < len(ln):
+            tokens.append(("plain", ln[last:]))
+        if not tokens:
+            tokens = [("plain", ln)]
+        first_run_done = False
+        for kind, t in tokens:
+            if first_run_done:
+                run = p.add_run()
+            else:
+                if p.runs:
+                    run = p.runs[0]
+                    run.text = t
+                else:
+                    run = p.add_run()
+                    run.text = t
+                first_run_done = True
+                continue
+            run.text = t
+            if kind == "bold":
+                run.font.bold = True
+                run.font.color.rgb = None  # 继承主题色
+            elif kind == "code":
+                try:
+                    from pptx.dml.color import RGBColor
+                    run.font.color.rgb = RGBColor(0x5A, 0x3F, 0x22)
+                except Exception:
+                    pass
+                run.font.italic = True
+    return tf
+
+
+def _build_pptx_file_bytes(title: str, slides: list, theme_info: dict = None) -> bytes:
+    """把结构化 slides 生成 .pptx 文件（16:9，国风+玻璃拟态配色：青黛/墨蓝/茶褐/月白）。"""
+    try:
+        from pptx import Presentation
+        from pptx.util import Inches, Pt, Emu
+        from pptx.dml.color import RGBColor
+        from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+    except Exception as e:
+        raise HTTPException(500, f"服务器未安装 python-pptx，请管理员执行 pip install python-pptx：{e}")
+
+    theme_info = theme_info or {}
+    subject = theme_info.get("subject") or "语文"
+    grade = theme_info.get("grade") or ""
+    teacher = theme_info.get("teacher") or "主讲教师"
+
+    prs = Presentation()
+    # 16:9
+    prs.slide_width = Inches(13.333)
+    prs.slide_height = Inches(7.5)
+
+    SW, SH = prs.slide_width, prs.slide_height
+    blank_layout = prs.slide_layouts[6]  # 空白版式
+
+    # ===== 玻璃拟态国风 4 色板 =====
+    # 青黛、墨蓝、茶褐、月白；朱砂点缀；米白辅助
+    C_QINGDAI   = RGBColor(0x2A, 0x50, 0x47)  # 主绿
+    C_MOLAN     = RGBColor(0x1F, 0x3A, 0x5A)  # 墨蓝
+    C_CHAHE     = RGBColor(0x5A, 0x3F, 0x22)  # 茶褐
+    C_ZHUSHA    = RGBColor(0x83, 0x3F, 0x21)  # 朱砂（印章/强调）
+    C_YUEBAI    = RGBColor(0xF7, 0xF2, 0xE3)  # 月白（底色）
+    C_MIBAI     = RGBColor(0xFF, 0xFC, 0xF4)  # 米白
+    C_GOLD      = RGBColor(0xC8, 0xA0, 0x6B)  # 金色分隔
+    C_ACCENT    = RGBColor(0xA5, 0x6A, 0x3B)  # 赭石（辅助）
+    C_DARK_BG   = RGBColor(0x14, 0x26, 0x32)  # 封面底（墨蓝深）
+    C_DARK_BG_2 = RGBColor(0x2A, 0x50, 0x47)  # 封面底 2（青黛）
+    C_TEXT_DARK = RGBColor(0x2A, 0x32, 0x38)  # 正文深灰
+    C_GLASS_A   = RGBColor(0xFB, 0xF7, 0xEB)  # 玻璃卡片半透浅
+    C_GLASS_B   = RGBColor(0xF2, 0xEA, 0xD6)  # 玻璃卡片次
+
+    # 字体（兼容 Windows / macOS / Linux 常见字体）
+    FONT_TITLE   = "STFangsong"   # 标题：仿宋（书法感）/ FangSong
+    FONT_BODY    = "Microsoft YaHei"  # 正文雅黑
+    FONT_GUWEN   = "SimSun"       # 古诗文原文宋体（风雅宋备选）
+    FONT_KAITI   = "STKaiti"      # 楷体：注释
+    FONT_HEITI   = "SimHei"       # 黑体兜底
+
+    def _set_run_font(run, name=FONT_BODY, size=None, bold=None, italic=None, color=None):
+        if name:
+            try:
+                run.font.name = name
+                from lxml import etree
+                rPr = run._r.get_or_add_rPr()
+                ns = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+                # Latin + EastAsia
+                for tag, v in [("latin", name), ("ea", name)]:
+                    el = rPr.find(ns + tag)
+                    if el is None:
+                        el = etree.SubElement(rPr, ns + tag)
+                    el.set("typeface", v)
+            except Exception:
+                pass
+        if size is not None:
+            try: run.font.size = Pt(size)
+            except Exception: pass
+        if bold is not None:
+            try: run.font.bold = bool(bold)
+            except Exception: pass
+        if italic is not None:
+            try: run.font.italic = bool(italic)
+            except Exception: pass
+        if color is not None:
+            try: run.font.color.rgb = color
+            except Exception: pass
+
+    def _bg(slide, color):
+        try:
+            bg = slide.background
+            fill = bg.fill
+            from pptx.enum.dml import MSO_FILL
+            fill.solid()
+            fill.fore_color.rgb = color
+        except Exception:
+            pass
+
+    def _rounded_rect(slide, x, y, w, h, fill_color=None, line_color=None, line_w=None, radius="small"):
+        """玻璃圆角矩形（磨砂卡片）。"""
+        from pptx.enum.shapes import MSO_SHAPE
+        shape_type = MSO_SHAPE.ROUNDED_RECTANGLE
+        shp = slide.shapes.add_shape(shape_type, x, y, w, h)
+        # 调整圆角半径
+        try:
+            if radius == "big":
+                shp.adjustments[0] = 0.15
+            elif radius == "small":
+                shp.adjustments[0] = 0.08
+            else:
+                shp.adjustments[0] = 0.04
+        except Exception:
+            pass
+        if fill_color is None:
+            try: shp.fill.background()
+            except Exception: shp.fill.solid(); shp.fill.fore_color.rgb = RGBColor(0xFF,0xFF,0xFF)
+        else:
+            shp.fill.solid()
+            shp.fill.fore_color.rgb = fill_color
+            try:
+                # 透明度：用 XML 注入 alpha（半透明玻璃感）
+                from lxml import etree
+                solid = shp.fill._fill
+                ns = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+                srgb = solid.find(ns + "solidFill")
+                if srgb is not None:
+                    alpha = srgb.find(ns + "alpha")
+                    if alpha is None:
+                        alpha = etree.SubElement(srgb, ns + "alpha")
+                    alpha.set("val", "82000")  # ~50% 透明
+            except Exception:
+                pass
+        if line_color is None:
+            try: shp.line.fill.background()
+            except Exception: pass
+        else:
+            try:
+                shp.line.color.rgb = line_color
+                if line_w is not None:
+                    shp.line.width = line_w
+            except Exception:
+                pass
+        try: shp.shadow.inherit = False
+        except Exception: pass
+        return shp
+
+    def _rect(slide, x, y, w, h, fill_color=None, line_color=None, line_w=None):
+        from pptx.enum.shapes import MSO_SHAPE
+        shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, y, w, h)
+        if fill_color is None:
+            shape.fill.background()
+        else:
+            shape.fill.solid()
+            shape.fill.fore_color.rgb = fill_color
+        if line_color is None:
+            try: shape.line.fill.background()
+            except Exception: pass
+        else:
+            try:
+                shape.line.color.rgb = line_color
+                if line_w is not None: shape.line.width = line_w
+            except Exception: pass
+        try: shape.shadow.inherit = False
+        except Exception: pass
+        return shape
+
+    def _textbox(slide, x, y, w, h, text="", *, size=18, bold=False, color=None,
+                 align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP, font_name=FONT_BODY, italic=False):
+        tb = slide.shapes.add_textbox(x, y, w, h)
+        tf = tb.text_frame
+        tf.word_wrap = True
+        tf.margin_left = Inches(0.10)
+        tf.margin_right = Inches(0.10)
+        tf.margin_top = Inches(0.05)
+        tf.margin_bottom = Inches(0.05)
+        tf.vertical_anchor = anchor
+        p = tf.paragraphs[0]
+        p.alignment = align
+        r = p.add_run()
+        r.text = text or ""
+        _set_run_font(r, font_name, size, bold, italic, color)
+        return tb
+
+    def _add_slide_notes(slide, notes_text: str, intent_text: str = "", animation_text: str = ""):
+        """把讲者备注/设计意图/动画 写入 PPT 原生 notes 页（放映者模式）。"""
+        if not (notes_text or intent_text or animation_text):
+            return
+        try:
+            notes_slide = slide.notes_slide
+            tf = notes_slide.notes_text_frame
+            parts = []
+            if intent_text:
+                parts.append("【设计意图】" + intent_text.strip())
+            if animation_text:
+                parts.append("【动画】" + animation_text.strip())
+            if notes_text:
+                parts.append("【讲师备注】" + notes_text.strip())
+            tf.text = "\n\n".join(parts)
+        except Exception:
+            pass
+
+    def _poly_decor(slide):
+        """低多边形装饰（左上/右下散点）。"""
+        from pptx.enum.shapes import MSO_SHAPE
+        try:
+            for cx, cy, sz, col in [
+                (Inches(0.25), Inches(0.3), Inches(0.16), C_QINGDAI),
+                (Inches(0.55), Inches(0.2), Inches(0.09), C_ACCENT),
+                (Inches(12.6), Inches(7.05), Inches(0.18), C_ZHUSHA),
+                (Inches(12.9), Inches(6.75), Inches(0.10), C_CHAHE),
+                (Inches(12.3), Inches(7.22), Inches(0.07), C_QINGDAI),
+            ]:
+                s = slide.shapes.add_shape(MSO_SHAPE.OVAL, cx, cy, sz, sz)
+                s.fill.solid(); s.fill.fore_color.rgb = col
+                try: s.line.fill.background(); s.shadow.inherit = False
+                except Exception: pass
+        except Exception:
+            pass
+
+    def _slide_page_decor(slide, page_no=None, anim_text=None):
+        """每页装饰：顶部装饰线 + 页码 + 学科角标 + 动画标记小胶囊。"""
+        # 顶部 双线装饰：茶褐细线 + 青黛主条
+        _rect(slide, Inches(0.6), Inches(0.48), Inches(12.133), Emu(6350),  # 0.067"
+              fill_color=C_ACCENT)
+        _rect(slide, Inches(0.6), Inches(0.60), Inches(12.133), Emu(19050),  # 0.2"
+              fill_color=C_QINGDAI, line_color=None)
+        # 右上角印章
+        from pptx.enum.shapes import MSO_SHAPE
+        try:
+            stamp = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(12.5), Inches(0.75), Inches(0.5), Inches(0.5))
+            stamp.fill.solid(); stamp.fill.fore_color.rgb = C_ZHUSHA
+            try: stamp.line.color.rgb = C_ZHUSHA; stamp.shadow.inherit = False
+            except Exception: pass
+            stb = slide.shapes.add_textbox(Inches(12.51), Inches(0.78), Inches(0.48), Inches(0.46))
+            stf = stb.text_frame
+            stf.margin_left = stf.margin_right = Emu(0)
+            stf.margin_top = stf.margin_bottom = Emu(0)
+            pp = stf.paragraphs[0]
+            pp.alignment = PP_ALIGN.CENTER
+            rr = pp.add_run(); rr.text = "教"
+            _set_run_font(rr, FONT_KAITI, 26, True, False, C_YUEBAI)
+        except Exception:
+            pass
+        # 右下角 页码
+        if page_no is not None:
+            _textbox(slide, Inches(12.15), Inches(7.02), Inches(1.1), Inches(0.32),
+                     f"— {page_no} —",
+                     size=11, color=C_ACCENT, align=PP_ALIGN.RIGHT, italic=True, font_name=FONT_TITLE)
+        # 学科年级 角标（左上）
+        tag = f"{grade} · {subject}" if grade else subject
+        if tag:
+            _textbox(slide, Inches(0.6), Inches(0.10), Inches(6), Inches(0.30),
+                     tag, size=11, color=C_ACCENT, italic=True, font_name=FONT_TITLE)
+        # 动画标记（玻璃胶囊，右下偏上）
+        if anim_text:
+            anim_short = anim_text if len(anim_text) < 26 else anim_text[:24] + "…"
+            cap = _rounded_rect(slide, Inches(9.8), Inches(7.00), Inches(2.3), Inches(0.34),
+                                fill_color=C_GLASS_A, line_color=C_GOLD, line_w=Pt(0.75), radius="small")
+            _textbox(slide, Inches(9.82), Inches(7.01), Inches(2.26), Inches(0.32),
+                     "✨ " + anim_short, size=10, bold=False, color=C_CHAHE,
+                     align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE, font_name=FONT_KAITI, italic=True)
+        _poly_decor(slide)
+
+    def _glass_card(slide, x, y, w, h, accent=None, radius="small"):
+        """绘制一张磨砂玻璃卡片（白描边 + 半透明底 + 淡阴影）。"""
+        from pptx.enum.shapes import MSO_SHAPE
+        accent = accent or C_QINGDAI
+        # 底部淡阴影
+        try:
+            shadow_bg = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE,
+                                               x + Inches(0.06), y + Inches(0.09), w, h)
+            shadow_bg.fill.solid(); shadow_bg.fill.fore_color.rgb = C_TEXT_DARK
+            try: shadow_bg.fill.fore_color.brightness = 0.6
+            except Exception: pass
+            try:
+                from lxml import etree
+                ns = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+                sf = shadow_bg.fill._fill.find(ns + "solidFill")
+                if sf is not None:
+                    alpha = sf.find(ns + "alpha")
+                    if alpha is None:
+                        from lxml import etree as _et
+                        alpha = _et.SubElement(sf, ns + "alpha")
+                    alpha.set("val", "12000")  # ~7% 深色投影
+            except Exception:
+                pass
+            try: shadow_bg.line.fill.background(); shadow_bg.shadow.inherit = False
+            except Exception: pass
+            # 把阴影挪到最底层
+            try:
+                spTree = slide.shapes._spTree
+                spTree.remove(shadow_bg._element)
+                spTree.insert(2, shadow_bg._element)
+            except Exception:
+                pass
+        except Exception:
+            pass
+        card = _rounded_rect(slide, x, y, w, h, fill_color=C_GLASS_A,
+                             line_color=RGBColor(0xFF,0xFF,0xFF), line_w=Pt(1.25), radius=radius)
+        # 左侧细边（accent 色）
+        try:
+            strip = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x + Emu(3810), y + Inches(0.08),
+                                           Inches(0.06), h - Inches(0.16))
+            strip.fill.solid(); strip.fill.fore_color.rgb = accent
+            try: strip.line.fill.background(); strip.shadow.inherit = False
+            except Exception: pass
+        except Exception:
+            pass
+        return card
+
+    # ---------- 逐页渲染 ----------
+    if not slides:
+        slides = [{"idx": 1, "title": title or "演示文稿", "content": "", "notes": "", "intent": "", "animation": ""}]
+
+    PALETTE_CYCLE = [C_QINGDAI, C_ZHUSHA, C_CHAHE, C_MOLAN, C_ACCENT, C_GOLD]
+
+    for i, raw in enumerate(slides, 1):
+        slide = prs.slides.add_slide(blank_layout)
+        _bg(slide, C_MIBAI)
+        idx = int(raw.get("idx") or i)
+        s_title = raw.get("title") or "未命名"
+        s_content = raw.get("content") or ""
+        s_notes = raw.get("notes") or ""
+        s_intent = raw.get("intent") or ""
+        s_anim = raw.get("animation") or ""
+        is_cover = (i == 1) or ("封面" in s_title)
+        is_toc = (i == 2) or ("目录" in s_title)
+        is_end = (i == len(slides)) or ("封底" in s_title or "致谢" in s_title)
+
+        if is_cover:
+            # 封面：墨深蓝 → 青黛对角渐变底 + 玻璃标题卡
+            _bg(slide, C_DARK_BG)
+            # 对角装饰色块
+            _rect(slide, Inches(0), Inches(0), Inches(0.38), SH, fill_color=C_ZHUSHA)
+            _rect(slide, Inches(0.48), Inches(0), Inches(0.10), SH, fill_color=C_MOLAN)
+            # 左上多边形装饰
+            _poly_decor(slide)
+            # 大标题玻璃卡片
+            _glass_card(slide, Inches(1.9), Inches(1.8), Inches(10.6), Inches(2.2), accent=C_GOLD, radius="big")
+            tb_title = _textbox(slide, Inches(2.1), Inches(2.0), Inches(10.2), Inches(1.8),
+                                title or s_title, size=52, bold=True, color=C_CHAHE,
+                                align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.MIDDLE, font_name=FONT_TITLE)
+            # 主标题下 金色分隔
+            _rect(slide, Inches(2.1), Inches(4.05), Inches(3.0), Emu(25400), fill_color=C_GOLD)
+            # 副标题玻璃卡
+            sub_parts = []
+            if grade: sub_parts.append(f"年级：{grade}")
+            if subject: sub_parts.append(f"学科：{subject}")
+            actual_ttl = s_title if (title and s_title != title) else "——"
+            sub_parts.append(f"课题：{actual_ttl}")
+            _glass_card(slide, Inches(2.1), Inches(4.25), Inches(8.0), Inches(1.3), accent=C_QINGDAI, radius="small")
+            _textbox(slide, Inches(2.3), Inches(4.35), Inches(7.6), Inches(1.1),
+                     "\n".join(sub_parts), size=18, color=C_TEXT_DARK,
+                     align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.MIDDLE, italic=True, font_name=FONT_KAITI)
+            # 主讲人 / 日期
+            _textbox(slide, Inches(2.1), Inches(5.85), Inches(8), Inches(0.4),
+                     f"主讲人：{teacher}", size=14, color=C_GOLD, align=PP_ALIGN.LEFT, font_name=FONT_BODY)
+            _textbox(slide, Inches(2.1), Inches(6.30), Inches(8), Inches(0.4),
+                     datetime.now().strftime("%Y 年 %m 月"),
+                     size=12, color=C_MIBAI, italic=True, align=PP_ALIGN.LEFT, font_name=FONT_KAITI)
+            # 左下圆印章
+            from pptx.enum.shapes import MSO_SHAPE
+            try:
+                seal = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(10.9), Inches(5.85), Inches(1.55), Inches(1.55))
+                seal.fill.solid(); seal.fill.fore_color.rgb = C_ZHUSHA
+                try: seal.line.color.rgb = C_ZHUSHA; seal.shadow.inherit = False
+                except Exception: pass
+                stb = slide.shapes.add_textbox(Inches(10.92), Inches(6.18), Inches(1.5), Inches(1.0))
+                stf = stb.text_frame; stf.word_wrap = True; stf.vertical_anchor = MSO_ANCHOR.MIDDLE
+                pp = stf.paragraphs[0]; pp.alignment = PP_ALIGN.CENTER
+                rr = pp.add_run(); rr.text = "国风\n教研"
+                _set_run_font(rr, FONT_KAITI, 26, True, False, C_YUEBAI)
+            except Exception:
+                pass
+            # notes
+            _add_slide_notes(slide, s_notes, s_intent, s_anim)
+            continue
+
+        if is_end:
+            # 封底：青黛深底
+            _bg(slide, C_DARK_BG_2)
+            _rect(slide, Inches(0), Inches(0), Inches(0.38), SH, fill_color=C_ZHUSHA)
+            _poly_decor(slide)
+            _glass_card(slide, Inches(1.8), Inches(2.8), Inches(9.7), Inches(2.4), accent=C_GOLD, radius="big")
+            _textbox(slide, Inches(0), Inches(3.10), SW, Inches(1.2),
+                     s_title or "感谢聆听！", size=50, bold=True, color=C_CHAHE,
+                     align=PP_ALIGN.CENTER, font_name=FONT_TITLE)
+            _rect(slide, Inches(6.0), Inches(4.40), Inches(1.333), Emu(25400), fill_color=C_GOLD)
+            _textbox(slide, Inches(0), Inches(4.65), SW, Inches(0.45),
+                     (f"{subject} · {grade}" if grade else subject),
+                     size=15, color=C_DARK_BG, align=PP_ALIGN.CENTER, italic=True, font_name=FONT_KAITI)
+            _textbox(slide, Inches(0), Inches(5.25), SW, Inches(0.4),
+                     "欢迎批评指正", size=14, color=C_MOLAN,
+                     align=PP_ALIGN.CENTER, italic=True, font_name=FONT_KAITI)
+            _add_slide_notes(slide, s_notes, s_intent, s_anim)
+            continue
+
+        if is_toc:
+            # 目录页：左侧 青黛玻璃大卡 写『目录』；右侧条目卡片
+            _slide_page_decor(slide, idx, s_anim)
+            # 左
+            _glass_card(slide, Inches(0.6), Inches(1.0), Inches(3.4), Inches(5.7), accent=C_QINGDAI, radius="big")
+            _textbox(slide, Inches(0.85), Inches(1.55), Inches(2.9), Inches(2.0),
+                     "目  录", size=48, bold=True, color=C_QINGDAI,
+                     align=PP_ALIGN.CENTER, font_name=FONT_TITLE)
+            _textbox(slide, Inches(0.85), Inches(3.8), Inches(2.9), Inches(1.2),
+                     "CONTENTS", size=16, color=C_CHAHE,
+                     align=PP_ALIGN.CENTER, italic=True, font_name=FONT_KAITI)
+            # 右条目
+            lines, had = _markdown_to_plain_lines(s_content, max_bullets=20)
+            # 目录条目做成竖向多张玻璃卡片
+            card_x, card_w, card_top = Inches(4.4), Inches(8.3), Inches(1.15)
+            y = card_top
+            max_h = Inches(5.4)
+            palette_i = 0
+            # 清理已空的段落（后续写入 tf）
+            if not lines:
+                lines = [("bullet", "目录待生成")]
+            # 等分高度
+            n = max(1, min(8, len(lines)))
+            row_h = Emu(int(max_h) // n)
+            row_gap = Inches(0.06)
+            cur_y = card_top
+            for j, (kind, t) in enumerate(lines):
+                if cur_y + row_h > card_top + max_h + Inches(0.01):
+                    break
+                accent = PALETTE_CYCLE[palette_i % len(PALETTE_CYCLE)]; palette_i += 1
+                hgt = row_h - row_gap
+                _glass_card(slide, card_x, cur_y, card_w, hgt, accent=accent, radius="small")
+                # 序号小圆
+                from pptx.enum.shapes import MSO_SHAPE
+                try:
+                    circ = slide.shapes.add_shape(MSO_SHAPE.OVAL, card_x + Inches(0.2), cur_y + (hgt/2) - Inches(0.17), Inches(0.34), Inches(0.34))
+                    circ.fill.solid(); circ.fill.fore_color.rgb = accent
+                    try: circ.line.fill.background(); circ.shadow.inherit = False
+                    except Exception: pass
+                    nTb = slide.shapes.add_textbox(card_x + Inches(0.2), cur_y + (hgt/2) - Inches(0.17), Inches(0.34), Inches(0.34))
+                    nTf = nTb.text_frame; nTf.margin_left=nTf.margin_right=nTf.margin_top=nTf.margin_bottom=Emu(0)
+                    nP = nTf.paragraphs[0]; nP.alignment = PP_ALIGN.CENTER
+                    nR = nP.add_run(); nR.text = str(j+1)
+                    _set_run_font(nR, FONT_BODY, 12, True, False, C_YUEBAI)
+                except Exception:
+                    pass
+                # 文本
+                tbox_x = card_x + Inches(0.7)
+                tbox_w = card_w - Inches(0.9)
+                tsize = 22 if len(t) < 26 else (20 if len(t) < 40 else 18)
+                _textbox(slide, tbox_x, cur_y, tbox_w, hgt, t,
+                         size=tsize, color=C_TEXT_DARK,
+                         align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.MIDDLE,
+                         font_name=FONT_TITLE if kind=="title" else FONT_BODY,
+                         bold=(kind=="title"))
+                cur_y += row_h
+            _add_slide_notes(slide, s_notes, s_intent, s_anim)
+            continue
+
+        # ===== 普通内页：新知 / 赏析 / 互动 / 练习 / 导入 / 总结 / 作业 =====
+        _slide_page_decor(slide, idx, s_anim)
+        # 标题玻璃条
+        _glass_card(slide, Inches(0.7), Inches(0.85), Inches(11.9), Inches(0.95), accent=C_QINGDAI, radius="small")
+        _textbox(slide, Inches(0.9), Inches(0.88), Inches(11.5), Inches(0.9),
+                 s_title, size=28, bold=True, color=C_QINGDAI,
+                 align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.MIDDLE, font_name=FONT_TITLE)
+
+        # 主体：将 Markdown 拆成元素 → 逐张玻璃卡片渲染
+        lines, had_bullets = _markdown_to_plain_lines(s_content, max_bullets=100)
+        # 智能分类：quote（玻璃）/ bullet / title / para
+        # 布局策略：
+        #   - 如果同时含 quote 与 bullet/para → 左 58% 卡片组（quote）/ 右 42%（要点）双栏
+        #   - 否则单栏纵向玻璃卡片堆叠
+        quotes = [(k, t) for k, t in lines if k == "quote"]
+        others = [(k, t) for k, t in lines if k != "quote"]
+
+        content_x = Inches(0.8)
+        content_y = Inches(2.00)
+        content_w = Inches(11.7)
+        content_h = Inches(4.2)
+
+        if quotes and others:
+            # 双栏
+            lw = Inches(6.5); rw = Inches(4.9)
+            # 左：原文/引用玻璃卡
+            _glass_card(slide, content_x, content_y, lw, content_h, accent=C_QINGDAI, radius="small")
+            lt = slide.shapes.add_textbox(content_x + Inches(0.25), content_y + Inches(0.12),
+                                           Inches(1.4), Inches(0.3))
+            ltf = lt.text_frame; ltf.margin_left=ltf.margin_right=Emu(0)
+            lp = ltf.paragraphs[0]; lp.alignment = PP_ALIGN.LEFT
+            lr = lp.add_run(); lr.text = "📖 原文 / 引用"
+            _set_run_font(lr, FONT_KAITI, 11, True, False, C_QINGDAI)
+            # 正文
+            left_tf_box = slide.shapes.add_textbox(content_x + Inches(0.25), content_y + Inches(0.5),
+                                                    lw - Inches(0.5), content_h - Inches(0.65))
+            ltf2 = left_tf_box.text_frame; ltf2.word_wrap = True; ltf2.vertical_anchor = MSO_ANCHOR.TOP
+            # 填内容
+            cur_p_l = ltf2.paragraphs[0]; cur_p_l.clear()
+            start_l = True
+            for k, t in quotes:
+                if not start_l: cur_p_l = ltf2.add_paragraph()
+                cur_p_l.space_after = Pt(6); cur_p_l.space_before = Pt(2)
+                r = cur_p_l.add_run(); r.text = t
+                _set_run_font(r, FONT_GUWEN, 16, False, False, C_TEXT_DARK)
+                start_l = False
+            # 右：要点玻璃卡
+            right_x = content_x + lw + Inches(0.3)
+            _glass_card(slide, right_x, content_y, rw, content_h, accent=C_ZHUSHA, radius="small")
+            rt = slide.shapes.add_textbox(right_x + Inches(0.22), content_y + Inches(0.12),
+                                           Inches(2.0), Inches(0.3))
+            rtf = rt.text_frame; rtf.margin_left=rtf.margin_right=Emu(0)
+            rp = rtf.paragraphs[0]; rp.alignment = PP_ALIGN.LEFT
+            rr_ = rp.add_run(); rr_.text = "💡 要点 / 赏析"
+            _set_run_font(rr_, FONT_KAITI, 11, True, False, C_ZHUSHA)
+            right_tf_box = slide.shapes.add_textbox(right_x + Inches(0.25), content_y + Inches(0.5),
+                                                     rw - Inches(0.5), content_h - Inches(0.65))
+            rtf2 = right_tf_box.text_frame; rtf2.word_wrap = True; rtf2.vertical_anchor = MSO_ANCHOR.TOP
+            cur_p_r = rtf2.paragraphs[0]; cur_p_r.clear()
+            start_r = True
+            palette_i = 0
+            for k, t in others:
+                if not start_r: cur_p_r = rtf2.add_paragraph()
+                cur_p_r.space_after = Pt(5); cur_p_r.space_before = Pt(2)
+                if k == "title":
+                    r = cur_p_r.add_run(); r.text = t
+                    _set_run_font(r, FONT_TITLE, 17, True, False, C_CHAHE)
+                elif k == "bullet":
+                    accent = PALETTE_CYCLE[palette_i % len(PALETTE_CYCLE)]; palette_i += 1
+                    r = cur_p_r.add_run(); r.text = "●  "
+                    _set_run_font(r, FONT_HEITI, 16, True, False, accent)
+                    r2 = cur_p_r.add_run(); r2.text = t
+                    _set_run_font(r2, FONT_BODY, 15, False, False, C_TEXT_DARK)
+                else:  # para / quote-moved
+                    r = cur_p_r.add_run(); r.text = t
+                    _set_run_font(r, FONT_BODY, 14, False, True, C_CHAHE)
+                start_r = False
+        else:
+            # 单栏：玻璃卡片铺陈（每页最多 6 张）
+            elements = lines or [("para", "（该页暂无内容）")]
+            # 合并同类型段落，控制卡片数 ≤ 6
+            merged = []
+            for k, t in elements:
+                if merged and merged[-1][0] == k and k in ("para", "quote"):
+                    merged[-1] = (k, merged[-1][1] + "\n" + t)
+                else:
+                    merged.append((k, t))
+            if len(merged) > 6:
+                merged = merged[:6]
+            n = len(merged)
+            total_h = content_h
+            gap = Inches(0.08)
+            card_h = Emu(int(total_h - gap * (n - 1)) // n)
+            cur_y = content_y
+            palette_i = 0
+            for k, t in merged:
+                accent = PALETTE_CYCLE[palette_i % len(PALETTE_CYCLE)]; palette_i += 1
+                _glass_card(slide, content_x, cur_y, content_w, card_h, accent=accent, radius="small")
+                # 标题卡：大一点的字体居中
+                if k == "title":
+                    _textbox(slide, content_x + Inches(0.35), cur_y, content_w - Inches(0.7), card_h, t,
+                             size=22, bold=True, color=accent,
+                             align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.MIDDLE, font_name=FONT_TITLE)
+                elif k == "bullet":
+                    # 要点卡片
+                    from pptx.enum.shapes import MSO_SHAPE
+                    try:
+                        circ = slide.shapes.add_shape(MSO_SHAPE.OVAL,
+                                                       content_x + Inches(0.25),
+                                                       cur_y + (card_h/2) - Inches(0.16),
+                                                       Inches(0.32), Inches(0.32))
+                        circ.fill.solid(); circ.fill.fore_color.rgb = accent
+                        try: circ.line.fill.background(); circ.shadow.inherit = False
+                        except Exception: pass
+                    except Exception:
+                        pass
+                    _textbox(slide, content_x + Inches(0.75), cur_y, content_w - Inches(0.95), card_h, t,
+                             size=18, color=C_TEXT_DARK,
+                             align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.MIDDLE, font_name=FONT_BODY)
+                elif k == "quote":
+                    _textbox(slide, content_x + Inches(0.4), cur_y, content_w - Inches(0.8), card_h, "“" + t + "”",
+                             size=16, italic=True, color=C_CHAHE,
+                             align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.MIDDLE, font_name=FONT_GUWEN)
+                else:  # para
+                    _textbox(slide, content_x + Inches(0.35), cur_y, content_w - Inches(0.7), card_h, t,
+                             size=16, color=C_TEXT_DARK,
+                             align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.MIDDLE, font_name=FONT_BODY)
+                cur_y += card_h + gap
+
+        # 底部：设计意图 + 讲师备注 + 动画 双栏
+        foot_y = Inches(6.40)
+        foot_h = Inches(0.9)
+        if s_intent or s_notes:
+            _rounded_rect(slide, Inches(0.8), foot_y, Inches(11.7), foot_h,
+                          fill_color=C_MIBAI, line_color=C_GOLD, line_w=Pt(0.75), radius="small")
+            mid = Inches(6.6)
+            base_left = Inches(0.9)
+            if s_intent:
+                # 设计意图（左，青黛）
+                _textbox(slide, base_left, foot_y, Emu(25400 * 4 // 2), foot_h,
+                         "🎯 设计意图", size=11, bold=True, color=C_QINGDAI,
+                         anchor=MSO_ANCHOR.MIDDLE, font_name=FONT_KAITI)
+                itb = slide.shapes.add_textbox(Inches(2.5), foot_y + Inches(0.05),
+                                               Inches(3.8), foot_h - Inches(0.1))
+                itf = itb.text_frame; itf.word_wrap = True; itf.vertical_anchor = MSO_ANCHOR.MIDDLE
+                ir = itf.paragraphs[0].add_run(); ir.text = s_intent
+                _set_run_font(ir, FONT_BODY, 10.5, False, False, C_TEXT_DARK)
+                # 分割线
+                _rect(slide, mid, Inches(6.46), Emu(9525), Inches(0.78),
+                      fill_color=C_GOLD)
+            if s_notes:
+                # 讲师备注（右，茶褐）
+                bx = Inches(6.75) if s_intent else Inches(0.9)
+                bw = Inches(5.55) if s_intent else Inches(11.4)
+                if s_intent:
+                    _textbox(slide, bx, foot_y, Inches(1.3), foot_h,
+                             "🗒️ 讲师备注", size=11, bold=True, color=C_CHAHE,
+                             anchor=MSO_ANCHOR.MIDDLE, font_name=FONT_KAITI)
+                    bx = Inches(8.05); bw = Inches(4.25)
+                ntb = slide.shapes.add_textbox(bx, foot_y + Inches(0.05), bw, foot_h - Inches(0.1))
+                ntf = ntb.text_frame; ntf.word_wrap = True; ntf.vertical_anchor = MSO_ANCHOR.MIDDLE
+                # 处理换行
+                lines_n = s_notes.split("\n") if s_notes else [""]
+                start = True
+                for ln in lines_n:
+                    if start:
+                        pr = ntf.paragraphs[0]
+                        start = False
+                    else:
+                        pr = ntf.add_paragraph()
+                    pr.space_after = Pt(2)
+                    rr_ = pr.add_run(); rr_.text = ln
+                    _set_run_font(rr_, FONT_BODY, 10.5, False, False, C_TEXT_DARK)
+        # 写入原生 notes
+        _add_slide_notes(slide, s_notes, s_intent, s_anim)
+
+    # 保存到 bytes
+    bio = io.BytesIO()
+    prs.save(bio)
+    bio.seek(0)
+    return bio.read()
+
+
+@router.get("/tools/{run_id}/export_pptx")
+def export_tool_as_pptx(run_id: int):
+    """按 tool_run ID 导出 .pptx。若该 run 非 PPT 类型且有内容，则也按 ## 页尝试拆分。"""
+    with get_cursor() as cur:
+        cur.execute("SELECT * FROM tool_runs WHERE id=?", (run_id,))
+        row = cur.fetchone()
+    if not row:
+        raise HTTPException(404, f"tool_run id={run_id} 不存在")
+    row = rows_to_list([row])[0]
+    tool_type = row.get("tool_type") or ""
+    title = row.get("title") or ("教学文稿-" + str(run_id))
+    result = json_loads(row.get("result") or "{}") or {}
+    md_text = result.get("markdown") or ""
+    slides = result.get("ppt_slides") or []
+    if not slides:
+        slides = _parse_ppt_slides(md_text) if md_text else []
+
+    theme_info = {
+        "subject": result.get("subject") or "",
+        "grade": result.get("grade") or "",
+        "teacher": (result.get("extra") or "").strip() or "主讲教师",
+    }
+    try:
+        pptx_bytes = _build_pptx_file_bytes(title, slides, theme_info=theme_info)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"生成 PPTX 失败：{e}")
+
+    fname = _safe_filename(title, f"教学文稿-{run_id}") + ".pptx"
+    import urllib.parse as _urlparse
+    encoded = _urlparse.quote(fname, safe="")
+    headers = {
+        "Content-Disposition": f"attachment; filename*=UTF-8''{encoded}",
+    }
+    return StreamingResponse(
+        io.BytesIO(pptx_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        headers=headers,
+    )

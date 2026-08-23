@@ -1518,7 +1518,7 @@ function bindAssistantUI() {
         if (placeholder) placeholder.remove();
         var bot = document.createElement('div');
         bot.className = 'msg ai mm-loading';
-        bot.innerHTML = '<div class="msg-bubble">🎨 通义万相 flux-schnell 正在生成…（通常 3-10 秒 / 张）</div>';
+        bot.innerHTML = '<div class="msg-bubble">🎨 通义万相 wanx-v1 正在生成…（通常 3-10 秒 / 张）</div>';
         his.appendChild(bot);
         his.scrollTop = his.scrollHeight;
       }
@@ -1530,7 +1530,7 @@ function bindAssistantUI() {
         body: JSON.stringify({ prompt: prompt, size: size, n: count })
       }).then(function (r) {
         var urls = (r && r.images && r.images.length) ? r.images : [];
-        var model = (r && r.model) ? r.model : 'flux-schnell';
+        var model = (r && r.model) ? r.model : 'wanx-v1';
         if (!urls.length) {
           if (bot) bot.querySelector('.msg-bubble').innerHTML = '❌ 未生成到图片：' + escapeHtml((r && r.error) || '未知错误');
           toast('生成失败', 'error');
@@ -2083,29 +2083,38 @@ function applyToolRunToResult(r) {
   var md = typeof result === 'object' ? (result.markdown || '') : (result || '');
   var refs = typeof result === 'object' ? (result.refs || []) : [];
   var slides = (result && result.ppt_slides) ? result.ppt_slides : [];
-  renderResultPanel(r.tool_type, r.title || '生成结果', md, refs, slides);
+  renderResultPanel(r.tool_type, r.title || '生成结果', md, refs, slides, r.id);
   toast('已载入该历史结果', 'info');
 }
 
 function generateToolResult() {
   if (STATE.chat.streaming) { toast('当前有生成任务，请稍候', 'warn'); return; }
-  var topicEl = document.getElementById('t-topic');
-  var topic = topicEl ? (topicEl.value || '').trim() : '';
-  if (!topic) {
-    toast('请填写主题 / 课文', 'warn');
-    if (topicEl) topicEl.focus();
-    return;
-  }
   var toolType = STATE.tools.currentTool;
   var payload = {
     tool_type: toolType,
     subject: valOf('t-subject', '语文'),
     grade: valOf('t-grade', ''),
     unit: valOf('t-unit', ''),
-    topic: topic,
+    topic: (valOf('t-topic') || '').trim(),
     extra: valOf('t-extra', ''),
-    top_k: parseInt(valOf('t-topk', '3'), 10) || 3
+    top_k: parseInt(valOf('t-topk', '3'), 10) || 3,
+    use_rag: true
   };
+  // 必填校验：避免标题里出现「(年级待补)」等占位
+  if (!payload.topic) {
+    toast('请填写【主题 / 课文 / 论文题目】', 'warn');
+    var tTopic = document.getElementById('t-topic');
+    if (tTopic) tTopic.focus();
+    return;
+  }
+  if (!payload.subject) {
+    toast('请选择【学科】', 'warn');
+    return;
+  }
+  if (!payload.grade) {
+    toast('请选择【年级 / 学段】', 'warn');
+    return;
+  }
   var info = TOOL_TITLE_MAP[toolType];
   var resT = document.getElementById('toolsResultTitle');
   if (resT && info) resT.textContent = info.result + ' · 生成中…';
@@ -2132,7 +2141,8 @@ function generateToolResult() {
     var md = (r && r.result && r.result.markdown) ? r.result.markdown : (r && r.result ? r.result : '');
     var refs = (r && r.result && r.result.refs) ? r.result.refs : (r && r.refs ? r.refs : []);
     var slides = (r && r.ppt_slides && r.ppt_slides.length) ? r.ppt_slides : ((r && r.result && r.result.ppt_slides) ? r.result.ppt_slides : []);
-    renderResultPanel(toolType, r ? (r.title || info.result) : info.result, md, refs, slides);
+    var runId = r ? r.id : null;
+    renderResultPanel(toolType, r ? (r.title || info.result) : info.result, md, refs, slides, runId);
     toast('生成成功', 'success');
     loadTools();
   }).catch(function () {
@@ -2149,12 +2159,13 @@ function valOf(id, def) {
   return (v === null || v === undefined || v === '') ? def : v;
 }
 
-function renderResultPanel(toolType, title, md, refs, slides) {
+function renderResultPanel(toolType, title, md, refs, slides, runId) {
   var tEl = document.getElementById('toolsResultTitle');
   if (tEl) tEl.textContent = title;
   var body = document.getElementById('toolsResultBody');
   if (body) {
     body.setAttribute('data-raw-md', md || '');
+    if (runId != null) body.setAttribute('data-run-id', String(runId)); else body.removeAttribute('data-run-id');
     body.innerHTML = '';
 
     // PPT 工具：顶部渲染幻灯片预览面板
@@ -2176,13 +2187,23 @@ function renderResultPanel(toolType, title, md, refs, slides) {
           if (i >= slides.length) i = slides.length - 1;
           cur = i;
           var s = slides[i] || {};
-          var contentHtml = renderMiniMd(s.content || '（该页无内容）');
+          var rawContent = s.content || '（该页无内容）';
+          var contentHtml = renderMiniMd(rawContent);
+          // 自动识别：原文 vs 注释 双栏布局（命中【原文】【注释】等关键词时启用）
+          if (/原文|课文|诗句/.test(rawContent) && /注释|批注|解/.test(rawContent)) {
+            contentHtml = autoTwoColGlass(rawContent);
+          }
+          var animTag = '';
+          if (s.animation) {
+            animTag = '<span class="ppt-anim-tag" title="本页动画配置">✨ ' + escapeHtml(s.animation) + '</span>';
+          }
           stage.innerHTML =
-            '<div class="ppt-slide-head"><span class="ppt-num">第 ' + (s.idx || (i+1)) + ' 页</span><span class="ppt-title">' + escapeHtml(s.title || '未命名') + '</span></div>' +
+            '<div class="ppt-slide-head"><span class="ppt-num">第 ' + (s.idx || (i+1)) + ' 页</span><span class="ppt-title">' + escapeHtml(s.title || '未命名') + '</span>' + animTag + '</div>' +
             '<div class="ppt-slide-body">' + contentHtml + '</div>';
           var note = '';
           if (s.intent) note += '<div class="ppt-meta-line"><b>🎯 设计意图：</b>' + escapeHtml(s.intent) + '</div>';
           if (s.notes) note += '<div class="ppt-meta-line"><b>🗒️ 讲师备注：</b>' + escapeHtml(s.notes).replace(/\n/g, '<br/>') + '</div>';
+          if (s.animation) note += '<div class="ppt-meta-line"><b>✨ 动画：</b>' + escapeHtml(s.animation) + '</div>';
           notesBox.innerHTML = note || '<div class="ppt-meta-line gray">该页暂无设计意图和讲师备注。</div>';
           // nav
           var navHtml = '';
@@ -2192,9 +2213,10 @@ function renderResultPanel(toolType, title, md, refs, slides) {
               '<span class="pill-idx">' + (slides[k].idx || (k+1)) + '</span>' + escapeHtml(tt) +
             '</button>';
           }
-          navHtml += '<div style="display:flex;gap:8px;margin-top:10px;"><button class="btn outline small" id="ppt-prev">⬅ 上一页</button>' +
+          navHtml += '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;"><button class="btn outline small" id="ppt-prev">⬅ 上一页</button>' +
             '<button class="btn outline small" id="ppt-next">下一页 ➡</button>' +
-            '<button class="btn primary small" id="ppt-export">⬇ 导出幻灯片 JSON</button></div>';
+            '<button class="btn primary small" id="ppt-pptx">⬇ 下载 PPTX</button>' +
+            '<button class="btn outline small" id="ppt-json">📋 JSON 数据</button></div>';
           nav.innerHTML = navHtml;
           var pills = nav.querySelectorAll('.ppt-pill');
           for (var m = 0; m < pills.length; m++) {
@@ -2206,8 +2228,22 @@ function renderResultPanel(toolType, title, md, refs, slides) {
           if (pv) pv.addEventListener('click', function () { render(cur - 1); });
           var nx = nav.querySelector('#ppt-next');
           if (nx) nx.addEventListener('click', function () { render(cur + 1); });
-          var exp = nav.querySelector('#ppt-export');
-          if (exp) exp.addEventListener('click', function () {
+          var ppx = nav.querySelector('#ppt-pptx');
+          if (ppx) ppx.addEventListener('click', function () {
+            if (runId == null) {
+              toast('当前结果缺少 runId，无法下载 PPTX', 'warn');
+              return;
+            }
+            var a = document.createElement('a');
+            a.href = API_BASE + '/tools/' + encodeURIComponent(runId) + '/export_pptx';
+            a.download = ((title || '教学演示文稿').replace(/[\/\\:*?"<>|]/g, '_')) + '.pptx';
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(function () { try { document.body.removeChild(a); } catch (_) {} }, 1000);
+            toast('正在下载 PPTX 文件…', 'info');
+          });
+          var pjn = nav.querySelector('#ppt-json');
+          if (pjn) pjn.addEventListener('click', function () {
             var blob = new Blob([JSON.stringify({ title: title, slides: slides }, null, 2)], { type: 'application/json;charset=utf-8' });
             var a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
@@ -2347,6 +2383,60 @@ function renderMiniMd(text) {
   }
   if (inList) html += listEl;
   return html;
+}
+
+/**
+ * 自动把『原文/注释』内容分成双栏玻璃卡片
+ * 左：原文（凡包含【原文/课文/诗句/原文左栏】标题的 blockquote，或未命中注释的纯诗句行）
+ * 右：注释批注（包含【注释/批注/赏析/右栏】标题的 blockquote 或行）
+ */
+function autoTwoColGlass(text) {
+  if (!text) return '';
+  var lines = String(text).split('\n');
+  var leftHtml = '';
+  var rightHtml = '';
+  var curCol = null; // 'left' / 'right'
+  // 先清理独立的标题
+  for (var i = 0; i < lines.length; i++) {
+    var ln = lines[i].replace(/^\s+/, '');
+    var plain = ln.replace(/^>\s?/, '').replace(/^>\s?/, '');
+    var isQuote = /^>\s?/.test(ln);
+    // 标题行判定
+    if (/【原文|【课文|【诗句|原文左栏|【正文|【原诗/.test(plain)) {
+      curCol = 'left';
+      leftHtml += '<div class="ppt-col-title">📖 原文</div>';
+      continue;
+    }
+    if (/【注释|【批注|【赏析|【翻译|【译文|注释右栏|【注/.test(plain)) {
+      curCol = 'right';
+      rightHtml += '<div class="ppt-col-title accent">🖋 注释 / 批注</div>';
+      continue;
+    }
+    // 空行跳过
+    if (!plain) continue;
+    var innerHtml = renderInlineMarkdown(plain);
+    // 若不是引用块但像诗句/古文行：入左；若是列表入右；否则看当前列
+    if (!curCol) {
+      if (isQuote || /[-*]\s+/.test(ln)) curCol = 'right';
+      else curCol = 'left';
+    }
+    var wrap;
+    if (/^\s*([-*]|\d+\.)\s+/.test(ln)) {
+      var li = ln.replace(/^\s*([-*]|\d+\.)\s+/, '');
+      wrap = '<li>' + renderInlineMarkdown(li) + '</li>';
+    } else {
+      wrap = isQuote
+        ? '<blockquote>' + innerHtml + '</blockquote>'
+        : '<p style="margin:3px 0;">' + innerHtml + '</p>';
+    }
+    if (curCol === 'left') leftHtml += wrap;
+    else rightHtml += wrap;
+  }
+  // 兜底：若右栏完全为空，回退到普通渲染
+  if (!rightHtml) return renderMiniMd(text);
+  var left = '<div>' + (leftHtml || '<div class="ppt-col-title">📖 原文</div>') + '</div>';
+  var right = '<div>' + rightHtml + '</div>';
+  return '<div class="ppt-two-col">' + left + right + '</div>';
 }
 
 /* ============================================================

@@ -25,7 +25,20 @@ ZHIPU_LONG_MODEL = "glm-4"
 DASHSCOPE_CHAT_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
 DASHSCOPE_VL_MODEL = "qwen-vl-plus"       # 视觉多模态（图文理解）
 DASHSCOPE_TEXT_MODEL = "qwen-plus"        # 纯文本生成（兜底）
-DASHSCOPE_TTI_MODEL = "flux-schnell"      # 通义万相文本生图（通过 wanx 专用接口）
+DASHSCOPE_TTI_MODEL = "wanx-v1"           # 通义万相文本生图（DashScope 官方支持模型名）
+# 通义万相 wanx-v1 官方支持的尺寸列表（其他尺寸会触发 InvalidParameter 报错）
+#   1024*1024 — 方图（课文配图/插画）
+#   720*1280  — 9:16 竖版海报
+#   1280*720  — 16:9 横版 PPT 插图
+#   1024*1536 — 2:3 竖版
+#   1536*1024 — 3:2 横版
+WANX_ALLOWED_SIZES = {
+    "1024*1024",
+    "720*1280",
+    "1280*720",
+    "1024*1536",
+    "1536*1024",
+}
 WANX_IMAGE_URL = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis"
 WANX_TASK_URL = "https://dashscope.aliyuncs.com/api/v1/tasks/{task_id}"
 
@@ -355,7 +368,7 @@ class LLMGenerator:
             # RUNNING / PENDING 继续等待
         raise RuntimeError(f"qwen-vl-plus 任务超时: {last_body[:400]}")
 
-    # ============== 多模态：文本生图（通义万相 / flux-schnell） ==============
+    # ============== 多模态：文本生图（通义万相 wanx-v1） ==============
     def text_to_image(
         self,
         prompt: str,
@@ -373,10 +386,19 @@ class LLMGenerator:
         if not prompt or not prompt.strip():
             raise RuntimeError("prompt 不能为空")
 
+        # size 白名单校验：wanx-v1 仅接受 1024*1024 / 1024*1536 / 1536*1024
+        use_size = (size or "1024*1024").strip().replace("x", "*").replace("×", "*")
+        if use_size not in WANX_ALLOWED_SIZES:
+            raise RuntimeError(
+                f"不支持的文生图尺寸「{size}」，通义万相允许: "
+                + ", ".join(sorted(WANX_ALLOWED_SIZES))
+            )
+        use_n = max(1, min(int(n or 1), 4))
+
         body = {
-            "model": "flux-schnell",
+            "model": DASHSCOPE_TTI_MODEL,
             "input": {"prompt": prompt.strip()},
-            "parameters": {"size": size or "1024*1024", "n": max(1, min(int(n or 1), 4))},
+            "parameters": {"size": use_size, "n": use_n},
         }
         headers = {
             "Authorization": f"Bearer {key}",
@@ -415,7 +437,7 @@ class LLMGenerator:
                     raise RuntimeError(f"万相文生图未返回图片: {json.dumps(info, ensure_ascii=False)[:400]}")
                 self.last_usage = {
                     "provider": "dashscope",
-                    "model": "flux-schnell",
+                    "model": DASHSCOPE_TTI_MODEL,
                     "prompt_tokens": 0,
                     "completion_tokens": 0,
                     "total_tokens": 0,

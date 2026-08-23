@@ -400,6 +400,8 @@ def ai_text_to_image(body: TextToImageBody):
             n=body.n or 1,
         )
         usage = GENERATOR.last_usage or {}
-        return {"image_urls": urls, "model_used": "flux-schnell", "usage": usage}
+        model_name = usage.get("model") or "wanx-v1"
+        # 与前端 app.js 键名保持一致：images / model / error
+        return {"images": urls, "model": model_name, "usage": usage}
     except RuntimeError as e:
         raise HTTPException(500, str(e))

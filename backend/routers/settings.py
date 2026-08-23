@@ -31,7 +31,7 @@ class SettingPut(BaseModel):
 
 
 class TestLLM(BaseModel):
-    provider: str = "deepseek"  # deepseek | zhipu
+    provider: str = "deepseek"  # deepseek | zhipu | dashscope
 
 
 def _mask_key(k: str, v: str) -> str:
@@ -75,15 +75,18 @@ def test_llm(body: TestLLM):
     except Exception:
         pass
     provider = (body.provider or "deepseek").lower()
-    if provider not in {"deepseek", "zhipu"}:
-        raise HTTPException(400, "provider 必须是 deepseek 或 zhipu")
+    if provider not in {"deepseek", "zhipu", "dashscope"}:
+        raise HTTPException(400, "provider 必须是 deepseek / zhipu / dashscope 之一")
     # 校验是否有对应 key
     if provider == "deepseek":
         if not config.get_sk_key():
             return {"success": False, "error": f"未配置 DeepSeek/OpenAI sk-* API Key（DB已载入的Key长度={len(config.get_env_or_db('DEEPSEEK_API_KEY','') or config.get_env_or_db('OPENAI_API_KEY',''))}）", "latency_ms": 0}
-    else:
+    elif provider == "zhipu":
         if not config.get_zhipu_key():
             return {"success": False, "error": f"未配置 Zhipu/GLM API Key（DB已载入的Key长度={len(config.get_env_or_db('ZHIPU_API_KEY','') or config.get_env_or_db('GLM_API_KEY',''))}）", "latency_ms": 0}
+    else:  # dashscope
+        if not config.get_dashscope_key():
+            return {"success": False, "error": f"未配置 Qianwen/DashScope API Key（DB已载入的Key长度={len(config.get_env_or_db('DASHSCOPE_API_KEY','') or config.get_env_or_db('QWEN_API_KEY',''))}）", "latency_ms": 0}
 
     import requests
 
@@ -91,12 +94,41 @@ def test_llm(body: TestLLM):
         url = "https://api.deepseek.com/v1/chat/completions"
         model = "deepseek-chat"
         key = config.get_sk_key()
-    else:
+    elif provider == "zhipu":
         url = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
         model = "glm-4-flash"
         key = config.get_zhipu_key()
+    else:  # dashscope：用 compatible-mode /v1/models 做免费、快速的鉴权连通测试
+        url = "https://dashscope.aliyuncs.com/compatible-mode/v1/models"
+        model = "(list-models 鉴权)"
+        key = config.get_dashscope_key()
 
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+
+    if provider == "dashscope":
+        # DashScope：GET /models 即可完成连通性+鉴权验证（不消耗token）
+        t0 = time.time()
+        try:
+            resp = requests.get(url, headers={"Authorization": f"Bearer {key}"}, timeout=60)
+            dt_ms = int((time.time() - t0) * 1000)
+            if resp.status_code != 200:
+                return {
+                    "success": False,
+                    "latency_ms": dt_ms,
+                    "model_used": model,
+                    "error": f"HTTP {resp.status_code}: {resp.text[:300]}",
+                }
+            data = resp.json()
+            count = len(data.get("data", []) or []) if isinstance(data, dict) else 0
+            return {
+                "success": True,
+                "latency_ms": dt_ms,
+                "model_used": model,
+                "echo": f"✅ DashScope 连通正常，账户可用模型数量: {count}",
+            }
+        except Exception as e:
+            return {"success": False, "latency_ms": int((time.time() - t0) * 1000), "error": str(e)}
+
     payload = {
         "model": model,
         "messages": [{"role": "user", "content": "请回复 OK（只回复这两个字）"}],
