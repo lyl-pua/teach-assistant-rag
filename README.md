@@ -29,7 +29,7 @@
 
 | ⚙️ 设置与数据（Key 测试 / Token 统计） | 🏮 国风插画卡片 |
 |:---:|:---:|
-| [![设置](assets/screenshots/settings-fullpage.png)](assets/screenshots/settings-fullpage.png) | [![国风插画](assets/screenshots/01-students-board.png)](assets/screenshots/01-students-board.png) |
+| [![设置](assets/screenshots/settings-fullpage.png)](assets/screenshots/settings-fullpage.png) | [![国风插画](assets/screenshots/01-students-board.png)] |
 
 ---
 
