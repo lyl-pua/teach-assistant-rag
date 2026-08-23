@@ -2,10 +2,11 @@
 
 > 面向小学语文教师 / 班主任的新中式国风个人工作台，集成 **RAG 检索增强生成** 与 **千问多模态（图文理解 + 文生图）** AI 能力，覆盖日常教学管理六大核心场景。基于 FastAPI + LangGraph + FAISS + DeepSeek/GLM/千问构建，可一键部署在 2 核 2G 的轻量服务器上。
 
-![version](https://img.shields.io/badge/version-2.3.0-2A5047)
+![version](https://img.shields.io/badge/version-2.4.0-2A5047)
 ![python](https://img.shields.io/badge/python-3.10+-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
-![multimodal](https://img.shields.io/badge/%E5%A4%9A%E6%A8%A1%E6%80%81-qwen--vl--plus%20%7C%20flux--schnell-orange)
+![multimodal](https://img.shields.io/badge/%E5%A4%9A%E6%A8%A1%E6%80%81-qwen--vl--plus%20%7C%20wanx--v1-orange)
+![ppt](https://img.shields.io/badge/PPT-%E7%8E%BB%E7%92%83%E6%8B%9F%E6%80%81%E5%9B%BD%E9%A3%8E%E7%89%88-833F21)
 
 <br />
 
@@ -33,6 +34,26 @@
 
 ***
 
+## 🎞️ PPT 玻璃拟态国风 · 效果演示（v2.4 · 参考珞珈 PPT 课程规范）
+
+> **设计规范**：青黛 / 墨蓝 / 茶褐 / 月白 / 朱砂 四色国色板 + 磨砂毛玻璃卡片（半透明、模糊背景、细白描边） + 宣纸纹理低多边形装饰 + 千文长文本自动分页 + 原文+注释双栏玻璃布局 + 逐行淡入/呼吸强调高级动画标记 + 讲者备注原生写入 PPTX。
+
+|                                📋 目录（11 章磨砂玻璃导航卡）                                    |                                📖 原文精读（左原文 / 右注释 双栏）                                   |
+| :-----------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------: |
+|   [![PPT·目录页](assets/screenshots/ppt-02-toc.png)](assets/screenshots/ppt-02-toc.png)      | [![PPT·原文双栏](assets/screenshots/ppt-03-text-two-col.png)](assets/screenshots/ppt-03-text-two-col.png) |
+
+|                                  🖌 赏析对比（阴晴对比玻璃卡）                                     |                                   🔖 重点字词（镂空字 + 边框修饰）                                   |
+| :-----------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------: |
+| [![PPT·赏析对比](assets/screenshots/ppt-05-analysis-compare.png)](assets/screenshots/ppt-05-analysis-compare.png) | [![PPT·重点字词](assets/screenshots/ppt-07-keywords.png)](assets/screenshots/ppt-07-keywords.png) |
+
+**技术要点**（已内置在 Skill 规范中，大模型生成即遵守）：
+- 固定 14–20 页结构：封面 / 目录 / 导入 / 原文2-4页 / 赏析3-5页 / 字词 / 探究 / 小结 / 作业 / 致谢
+- 引用块 `>` = 磨砂玻璃卡片容器；`**粗体**` = 镂空字/边框修饰
+- 千文拆分硬约束：每 4–6 句拆一页，名句独立玻璃卡片
+- 每页自动写入：讲师备注 / 设计意图 / 动画标记；导出 PPTX 时 **notes 写入放映者视图**
+
+***
+
 ## ✨ 项目亮点
 
 ### 核心能力
@@ -42,8 +63,8 @@
 - **🧠 多模态 AI · 前端可视化面板（v2.3）**：
   - **💬 文本问答（RAG）**：旧有知识库对话，默认面板
   - **🖼️ 视觉理解 qwen-vl-plus**：批改作业照片 / 识别教材页面 / 板书分析 / 课堂照片解读，前端三 Tab 直接粘贴图片 URL 提问并展示回答与 Token 用量
-  - **🖌️ 文生图 flux-schnell（通义万相）**：古诗词配图 / 教学卡片插画 / 课堂海报 / 课文插画，支持尺寸 / 数量选择，前端直接预览与右键保存
-- **🛠️ 教学工具自动生成（v2.3 新增 PPT）**：教案 / 课件 / 作业 / 论文 / **PPT 演示文稿** 5 类工具；PPT 工具自动按「封面 → 目录 → 导入 → 新知 1-5 → 互动 1-2 → 总结 → 作业 → 板书 → 封底」生成 15-22 页结构，前端可翻页预览、设计意图与讲师备注分栏、一键导出 slides JSON
+  - **🖌️ 文生图 wanx-v1（通义万相）**：古诗词配图 / 教学卡片插画 / 课堂海报 / 课文插画，支持 1024×1024 / 720×1280 / 1280×720 五种尺寸与数量选择，前端直接预览与右键保存
+- **🛠️ 教学工具自动生成（v2.3 新增 PPT · v2.4 升级玻璃拟态）**：教案 / 课件 / 作业 / 论文 / **PPT 演示文稿** 5 类工具；PPT 工具按「封面 → 目录 → 导入 → 原文2-4页 → 赏析3-5页 → 字词 → 探究 → 小结 → 作业 → 封底」生成 14–20 页玻璃拟态国风 Markdown，前端**磨砂玻璃卡片**+**原文/注释双栏**+**逐行淡入 CSS 动画**预览，后端 python-pptx 一键导出带**讲者备注 / 动画标记 / 玻璃圆角形状**的 .pptx
 
 ### Token 优化体系
 
@@ -428,18 +449,28 @@ nginx -t && systemctl reload nginx
 
 ## 🧭 Roadmap / 变更记录
 
+### v2.4.0 · PPT 玻璃拟态国风升级（对齐珞珈 Skill 规范）
+
+- [x] **PPT prompt 全量升级**：对齐 `language_teacher_ppt_skill.json` 规范，14–20 页固定结构、千文拆分 4–6 句/页、原文+注释双栏、`>` = 磨砂玻璃卡容器、**讲师备注 / 设计意图 / 动画标记** 三段必填
+- [x] **前端 PPT 预览重构**：青黛/墨蓝/茶褐/月白四色板 + 宣纸径向渐变背景 + 低多边形装饰点；磨砂玻璃卡片（`backdrop-filter: blur` + 白描边 + 三色左边框 + `glassFade` 入场）；镂空字 `**粗体**` 边框修饰；自动识别原文/注释双栏；逐行淡入 / 呼吸强调动画；✨ 动画胶囊标记
+- [x] **python-pptx 导出全面重做**：玻璃圆角矩形卡片（~50% 透明度）、淡阴影、左侧 accent 6 色循环细条；STFangsong 标题 / 雅黑正文 / 宋体古文 / 楷体注释；封面封底朱砂条 + 圆形印章；内页顶部青黛装饰条 + 右上角印章 + 页码；双栏智能布局（原文左/要点右）；讲者备注、设计意图、动画标记全部写入 **PPT 原生 notes 视图（放映者可见）**
+- [x] **提取全局 `renderPPTPreview()`**：便于主站与 demo 演示复用，版本缓存号提升至 `?v=2.4.0`
+- [x] 新增「🎞️ PPT 玻璃拟态国风 · 效果演示」2×2 截图画廊（目录 / 原文双栏 / 赏析对比 / 重点字词）
+
 ### v2.3.0 · 多模态面板 + PPT 演示文稿
 
 - [x] **AI 助手多模态可视化**：前端新增三 Tab「文本问答 / 图片理解 / 文生图」，图片理解支持 1-9 张 URL 批量分析，文生图支持尺寸/数量选择并直接预览下载
 - [x] **千问 DashScope Key 配置**：设置页新增「千问 / DashScope API Key」输入框与测试按钮，保存时同步写入 `dashscope_api_key` 与 `qwen_api_key`
 - [x] **教学工具新增「生成 PPT」**：新增 ppt 类型（max_tokens=3000），生成 15-22 页结构化幻灯片，自动解析为 `ppt_slides` 页数组（含 idx/title/content/intent/notes）
-- [x] **PPT 前端翻页预览**：左侧章节目录跳转、16:9 宣纸风舞台、分栏展示设计意图与讲师备注、一键导出 `slides.json`
+- [x] **PPT 前端翻页预览**：左侧章节目录跳转、16:9 宣纸风舞台、分栏展示设计意图与讲师备注、一键导出 `slides.json` + **后端 python-pptx 直出 .pptx**
 - [x] 前端缓存破坏版本号提升至 `?v=2.3.0`，侧栏版本徽章 v2.3 · 多模态 + RAG
+- [x] 修复文生图模型名：DashScope 合法模型使用 `wanx-v1`；API 响应键 `image_urls → images`、`model_used → model`
+- [x] 设置页 test-llm 支持 dashscope provider（`GET /compatible-mode/v1/models` 零资源鉴权）
 - [x] README 截图画廊对齐：删除最后一张占位图，AI 助手与教学工具标题更新为 v2.3 新能力
 
 ### v2.2.0 · 千问多模态
 
-- [x] 接入千问 DashScope：qwen-vl-plus（图文理解） + flux-schnell（通义万相文生图）
+- [x] 接入千问 DashScope：qwen-vl-plus（图文理解） + wanx-v1（通义万相文生图，5 种尺寸：1024×1024 / 720×1280 / 1280×720 / 1024×1536 / 1536×1024）
 - [x] 新增 API：`POST /api/ai/vision_chat`、`POST /api/ai/text_to_image`
 - [x] 功能截图画廊（首页 / 收集箱 / 阅读 / 日程 / AI / 工具 / 设置）
 - [x] API Key 归一化（dashscope\_api\_key / qwen\_api\_key / qianwen\_api\_key）
@@ -462,9 +493,9 @@ nginx -t && systemctl reload nginx
 
 ### 规划中
 
-- [ ] PPT 直出 `.pptx` 文件（PptxGenJS 导出 / 后端 python-pptx 模板）
 - [ ] 多模态支持拖拽上传图片（本地转 Base64 / OSS 上传）
-- [ ] 多 Agent 路由：视频生成 / 教学动画 / 高级 PPT 模板市场
+- [ ] PPT 模板市场（星空 / 低多边形 / 山水 / 班级管理 等预设样式）
+- [ ] 多 Agent 路由：视频生成 / 教学动画 / 课堂实录转讲稿 / PPT .pptx 母版自定义替换
 
 ***
 

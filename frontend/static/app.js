@@ -2159,6 +2159,98 @@ function valOf(id, def) {
   return (v === null || v === undefined || v === '') ? def : v;
 }
 
+/* 全局 PPT 预览渲染（给 renderResultPanel 与 demo-ppt.html 复用）*/
+function renderPPTPreview(slides, body, runId, title) {
+  title = title || '教学演示文稿';
+  var wrap = document.createElement('div');
+  wrap.className = 'ppt-slides-wrap';
+  wrap.innerHTML = '<h3 style="margin:0 0 8px 0;">📽️ 幻灯片结构化预览（共 ' + slides.length + ' 页） · 玻璃拟态国风版</h3>';
+  var nav = document.createElement('div');
+  nav.className = 'ppt-slide-nav';
+  var stage = document.createElement('div');
+  stage.className = 'ppt-slide-stage';
+  var notesBox = document.createElement('div');
+  notesBox.className = 'ppt-slide-notes';
+  var cur = 0;
+
+  function render(i) {
+    if (i < 0) i = 0;
+    if (i >= slides.length) i = slides.length - 1;
+    cur = i;
+    var s = slides[i] || {};
+    var rawContent = s.content || '（该页无内容）';
+    var contentHtml = renderMiniMd(rawContent);
+    // 自动识别：原文 vs 注释 双栏布局（命中【原文】【注释】等关键词时启用）
+    if (/原文|课文|诗句/.test(rawContent) && /注释|批注|解/.test(rawContent)) {
+      contentHtml = autoTwoColGlass(rawContent);
+    }
+    var animTag = '';
+    if (s.animation) {
+      animTag = '<span class="ppt-anim-tag" title="本页动画配置">✨ ' + escapeHtml(s.animation) + '</span>';
+    }
+    stage.innerHTML =
+      '<div class="ppt-slide-head"><span class="ppt-num">第 ' + (s.idx || (i+1)) + ' 页</span><span class="ppt-title">' + escapeHtml(s.title || '未命名') + '</span>' + animTag + '</div>' +
+      '<div class="ppt-slide-body">' + contentHtml + '</div>';
+    var note = '';
+    if (s.intent) note += '<div class="ppt-meta-line"><b>🎯 设计意图：</b>' + escapeHtml(s.intent) + '</div>';
+    if (s.notes) note += '<div class="ppt-meta-line"><b>🗒️ 讲师备注：</b>' + escapeHtml(s.notes).replace(/\n/g, '<br/>') + '</div>';
+    if (s.animation) note += '<div class="ppt-meta-line"><b>✨ 动画：</b>' + escapeHtml(s.animation) + '</div>';
+    notesBox.innerHTML = note || '<div class="ppt-meta-line gray">该页暂无设计意图和讲师备注。</div>';
+    // nav
+    var navHtml = '';
+    for (var k = 0; k < slides.length; k++) {
+      var tt = (slides[k].title || ('第' + (slides[k].idx || (k+1)) + '页'));
+      navHtml += '<button data-i="' + k + '" class="ppt-pill' + (k === i ? ' active' : '') + '">' +
+        '<span class="pill-idx">' + (slides[k].idx || (k+1)) + '</span>' + escapeHtml(tt) +
+      '</button>';
+    }
+    navHtml += '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;"><button class="btn outline small" id="ppt-prev">⬅ 上一页</button>' +
+      '<button class="btn outline small" id="ppt-next">下一页 ➡</button>' +
+      '<button class="btn primary small" id="ppt-pptx">⬇ 下载 PPTX</button>' +
+      '<button class="btn outline small" id="ppt-json">📋 JSON 数据</button></div>';
+    nav.innerHTML = navHtml;
+    var pills = nav.querySelectorAll('.ppt-pill');
+    for (var m = 0; m < pills.length; m++) {
+      pills[m].addEventListener('click', function () {
+        render(parseInt(this.getAttribute('data-i'), 10) || 0);
+      });
+    }
+    var pv = nav.querySelector('#ppt-prev');
+    if (pv) pv.addEventListener('click', function () { render(cur - 1); });
+    var nx = nav.querySelector('#ppt-next');
+    if (nx) nx.addEventListener('click', function () { render(cur + 1); });
+    var ppx = nav.querySelector('#ppt-pptx');
+    if (ppx) ppx.addEventListener('click', function () {
+      if (runId == null) {
+        toast('当前结果缺少 runId，无法下载 PPTX', 'warn');
+        return;
+      }
+      var a = document.createElement('a');
+      a.href = API_BASE + '/tools/' + encodeURIComponent(runId) + '/export_pptx';
+      a.download = ((title || '教学演示文稿').replace(/[\/\\:*?"<>|]/g, '_')) + '.pptx';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () { try { document.body.removeChild(a); } catch (_) {} }, 1000);
+      toast('正在下载 PPTX 文件…', 'info');
+    });
+    var pjn = nav.querySelector('#ppt-json');
+    if (pjn) pjn.addEventListener('click', function () {
+      var blob = new Blob([JSON.stringify({ title: title, slides: slides }, null, 2)], { type: 'application/json;charset=utf-8' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = (title || 'PPT') + '.slides.json';
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+      toast('已导出 slides.json', 'success');
+    });
+  }
+  wrap.appendChild(nav);
+  wrap.appendChild(stage);
+  wrap.appendChild(notesBox);
+  body.appendChild(wrap);
+  render(0);
+}
+
 function renderResultPanel(toolType, title, md, refs, slides, runId) {
   var tEl = document.getElementById('toolsResultTitle');
   if (tEl) tEl.textContent = title;
@@ -2170,95 +2262,7 @@ function renderResultPanel(toolType, title, md, refs, slides, runId) {
 
     // PPT 工具：顶部渲染幻灯片预览面板
     if (toolType === 'ppt' && slides && slides.length) {
-      (function renderSlides() {
-        var wrap = document.createElement('div');
-        wrap.className = 'ppt-slides-wrap';
-        wrap.innerHTML = '<h3 style="margin:0 0 8px 0;">📽️ 幻灯片结构化预览（共 ' + slides.length + ' 页）</h3>';
-        var nav = document.createElement('div');
-        nav.className = 'ppt-slide-nav';
-        var stage = document.createElement('div');
-        stage.className = 'ppt-slide-stage';
-        var notesBox = document.createElement('div');
-        notesBox.className = 'ppt-slide-notes';
-        var cur = 0;
-
-        function render(i) {
-          if (i < 0) i = 0;
-          if (i >= slides.length) i = slides.length - 1;
-          cur = i;
-          var s = slides[i] || {};
-          var rawContent = s.content || '（该页无内容）';
-          var contentHtml = renderMiniMd(rawContent);
-          // 自动识别：原文 vs 注释 双栏布局（命中【原文】【注释】等关键词时启用）
-          if (/原文|课文|诗句/.test(rawContent) && /注释|批注|解/.test(rawContent)) {
-            contentHtml = autoTwoColGlass(rawContent);
-          }
-          var animTag = '';
-          if (s.animation) {
-            animTag = '<span class="ppt-anim-tag" title="本页动画配置">✨ ' + escapeHtml(s.animation) + '</span>';
-          }
-          stage.innerHTML =
-            '<div class="ppt-slide-head"><span class="ppt-num">第 ' + (s.idx || (i+1)) + ' 页</span><span class="ppt-title">' + escapeHtml(s.title || '未命名') + '</span>' + animTag + '</div>' +
-            '<div class="ppt-slide-body">' + contentHtml + '</div>';
-          var note = '';
-          if (s.intent) note += '<div class="ppt-meta-line"><b>🎯 设计意图：</b>' + escapeHtml(s.intent) + '</div>';
-          if (s.notes) note += '<div class="ppt-meta-line"><b>🗒️ 讲师备注：</b>' + escapeHtml(s.notes).replace(/\n/g, '<br/>') + '</div>';
-          if (s.animation) note += '<div class="ppt-meta-line"><b>✨ 动画：</b>' + escapeHtml(s.animation) + '</div>';
-          notesBox.innerHTML = note || '<div class="ppt-meta-line gray">该页暂无设计意图和讲师备注。</div>';
-          // nav
-          var navHtml = '';
-          for (var k = 0; k < slides.length; k++) {
-            var tt = (slides[k].title || ('第' + (slides[k].idx || (k+1)) + '页'));
-            navHtml += '<button data-i="' + k + '" class="ppt-pill' + (k === i ? ' active' : '') + '">' +
-              '<span class="pill-idx">' + (slides[k].idx || (k+1)) + '</span>' + escapeHtml(tt) +
-            '</button>';
-          }
-          navHtml += '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;"><button class="btn outline small" id="ppt-prev">⬅ 上一页</button>' +
-            '<button class="btn outline small" id="ppt-next">下一页 ➡</button>' +
-            '<button class="btn primary small" id="ppt-pptx">⬇ 下载 PPTX</button>' +
-            '<button class="btn outline small" id="ppt-json">📋 JSON 数据</button></div>';
-          nav.innerHTML = navHtml;
-          var pills = nav.querySelectorAll('.ppt-pill');
-          for (var m = 0; m < pills.length; m++) {
-            pills[m].addEventListener('click', function () {
-              render(parseInt(this.getAttribute('data-i'), 10) || 0);
-            });
-          }
-          var pv = nav.querySelector('#ppt-prev');
-          if (pv) pv.addEventListener('click', function () { render(cur - 1); });
-          var nx = nav.querySelector('#ppt-next');
-          if (nx) nx.addEventListener('click', function () { render(cur + 1); });
-          var ppx = nav.querySelector('#ppt-pptx');
-          if (ppx) ppx.addEventListener('click', function () {
-            if (runId == null) {
-              toast('当前结果缺少 runId，无法下载 PPTX', 'warn');
-              return;
-            }
-            var a = document.createElement('a');
-            a.href = API_BASE + '/tools/' + encodeURIComponent(runId) + '/export_pptx';
-            a.download = ((title || '教学演示文稿').replace(/[\/\\:*?"<>|]/g, '_')) + '.pptx';
-            document.body.appendChild(a);
-            a.click();
-            setTimeout(function () { try { document.body.removeChild(a); } catch (_) {} }, 1000);
-            toast('正在下载 PPTX 文件…', 'info');
-          });
-          var pjn = nav.querySelector('#ppt-json');
-          if (pjn) pjn.addEventListener('click', function () {
-            var blob = new Blob([JSON.stringify({ title: title, slides: slides }, null, 2)], { type: 'application/json;charset=utf-8' });
-            var a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = (title || 'PPT') + '.slides.json';
-            a.click();
-            setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
-            toast('已导出 slides.json', 'success');
-          });
-        }
-        wrap.appendChild(nav);
-        wrap.appendChild(stage);
-        wrap.appendChild(notesBox);
-        body.appendChild(wrap);
-        render(0);
-      })();
+      renderPPTPreview(slides, body, runId, title);
 
       var sep = document.createElement('div');
       sep.innerHTML = '<hr style="margin:18px 0 8px 0;border:none;border-top:1px dashed rgba(247,242,227,0.2);"/>' +
