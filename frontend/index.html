@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>教学助手 · 刘老师的国风教研工作台</title>
+<link rel="stylesheet" href="./static/style.css?v=2.1.0" />
+</head>
+<body data-theme="dark">
+  <div class="app">
+
+    <!-- ================= 左侧侧栏 ================= -->
+    <aside class="sidebar">
+      <div class="brand">
+        <span>教学助手</span>
+        <small>刘老师的国风教研台</small>
+      </div>
+      <ul class="nav">
+        <li class="nav-item active" data-page="home"><span class="ico">🏠</span><span class="nav-txt">首页 / 工作台</span></li>
+        <li class="nav-item" data-page="inbox"><span class="ico">📥</span><span class="nav-txt">收集箱</span></li>
+        <li class="nav-item" data-page="reading"><span class="ico">📖</span><span class="nav-txt">阅读 · 知识库</span></li>
+        <li class="nav-item" data-page="schedule"><span class="ico">📅</span><span class="nav-txt">日程</span></li>
+        <li class="nav-item" data-page="assistant"><span class="ico">🤖</span><span class="nav-txt">AI 教研助手</span></li>
+        <li class="nav-item" data-page="tools"><span class="ico">🛠️</span><span class="nav-txt">教学工具</span></li>
+        <li class="nav-item" data-page="settings"><span class="ico">⚙️</span><span class="nav-txt">设置与数据</span></li>
+      </ul>
+      <div class="sidebar-footer">
+        <div class="teacher-badge">
+          <div class="seal">印</div>
+          <span id="sidebar-teacher-name">刘老师</span>
+        </div>
+        <div class="version">v2.0 · RAG</div>
+      </div>
+    </aside>
+
+    <!-- ================= 主内容 ================= -->
+    <main class="main">
+
+      <header class="topbar">
+        <div class="crumb" id="crumb">首页 / 工作台</div>
+        <div class="top-actions">
+          <input class="search" id="globalSearch" placeholder="跨模块搜索：课件、日程、笔记、AI 问答…" />
+          <span class="token-badge" id="tokenBadge" title="Token 消耗统计" onclick="showTokenDetail()">
+            <span class="gi-svg" style="width:14px;height:14px;color:#7CC9A3;"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="4" y="5" width="2.5" height="10" rx="1" fill="currentColor" opacity="0.3"/><rect x="13.5" y="5" width="2.5" height="10" rx="1" fill="currentColor" opacity="0.3"/><rect x="6" y="6" width="8" height="8" rx="0.5"/><line x1="8" y1="8.5" x2="12" y2="8.5" stroke-width="1"/><line x1="8" y1="10.5" x2="12" y2="10.5" stroke-width="1"/></svg></span>
+            <span id="tokenCount">0</span> tokens
+          </span>
+          <button class="btn ghost" onclick="refreshWeather()">🔄 刷新天气</button>
+          <span class="top-date" id="topDate"></span>
+        </div>
+      </header>
+
+      <section class="content">
+
+        <!-- ========= page-home 首页 ========= -->
+        <div class="page active" id="page-home">
+          <!-- 问候横幅（墨绿渐变） -->
+          <div class="greeting-card">
+            <div class="greet-text">
+              <h1 id="greetTitle" class="guo-title">早上好，刘老师</h1>
+              <p id="greetSub" class="guo-sub">今天是 2026 年 8 月 21 日 · 农历七月十九 · 处暑前后</p>
+              <div class="poem">
+                <p>空山新雨后，天气晚来秋。</p>
+                <p>明月松间照，清泉石上流。</p>
+                <small>——王维《山居秋暝》</small>
+              </div>
+            </div>
+            <!-- 天气小卡片 -->
+            <div class="weather-card" id="homeWeather">
+              <div class="w-title">📍汉寿 · 今日天气</div>
+              <div class="w-body">
+                <div class="w-main">
+                  <span id="w-icon" class="w-icon">☀️</span>
+                  <span id="w-temp">--°</span>
+                </div>
+                <div class="w-meta">
+                  <div id="w-weather">加载中…</div>
+                  <div>湿度 <span id="w-humidity">--</span>% · 风力 <span id="w-wind">--</span>km/h</div>
+                  <div>最高 <span id="w-max">--</span>° / 最低 <span id="w-min">--</span>° · 降水概率 <span id="w-pop">--</span>%</div>
+                </div>
+              </div>
+              <div class="w-daily" id="w-daily"></div>
+            </div>
+          </div>
+
+          <!-- 今日统计 -->
+          <h3 class="section-title"><span>今 日 数 据</span></h3>
+          <div class="stat-grid" id="statGrid"></div>
+
+          <!-- 模块入口 -->
+          <h3 class="section-title"><span>功 能 速 览</span></h3>
+          <div class="entry-grid">
+            <div class="entry c1" data-go="reading"><div class="t">📖 藏书架 · 阅读</div><p>上传课件课文 · 自动向量化</p><b>10 份文档</b></div>
+            <div class="entry c2" data-go="schedule"><div class="t">📅 日 程</div><p>教学教研家长会 · 月视图</p><b>今日 0 项</b></div>
+            <div class="entry c3" data-go="assistant"><div class="t">🤖 AI 教研助手</div><p>RAG 问答 · 溯源引用</p><b>智谱 1024 维</b></div>
+            <div class="entry c4" data-go="tools"><div class="t">🛠 教学工具</div><p>一键教案/课件/作业/论文</p><b>4 类模板</b></div>
+            <div class="entry c5" data-go="inbox"><div class="t">📥 收 集 箱</div><p>灵感待办学生情况</p><b>支持置顶标签</b></div>
+            <div class="entry c6" data-go="settings"><div class="t">⚙️ 设置与数据</div><p>API Key / 数据导出</p><b>安全存储</b></div>
+          </div>
+        </div>
+
+        <!-- ========= page-inbox 收集箱 ========= -->
+        <div class="page" id="page-inbox">
+          <div class="toolbar">
+            <h3 class="p-title">📥 收集箱</h3>
+            <div class="inbox-tabs" id="inboxTabs">
+              <span class="inbox-tab active" data-type="all">全部</span>
+              <span class="inbox-tab" data-type="note">📝 笔记</span>
+              <span class="inbox-tab" data-type="idea">💡 灵感</span>
+              <span class="inbox-tab" data-type="todo">✅ 待办</span>
+              <span class="inbox-tab" data-type="student">👧 学生</span>
+            </div>
+            <button class="btn primary ml" id="inboxAddBtn">+ 新建条目</button>
+          </div>
+          <div class="inbox-search-box">
+            <input type="text" id="inboxSearch" class="w-full" placeholder="搜索收集箱：标题、内容、标签…" />
+          </div>
+          <ul class="inbox-list" id="inboxList">
+            <li class="inbox-empty">暂无可显示的条目，点击右上「新建条目」添加。</li>
+          </ul>
+        </div>
+
+        <!-- ========= page-reading 阅读 · 知识库 ========= -->
+        <div class="page" id="page-reading">
+          <div class="toolbar">
+            <h3 class="p-title">📖 藏书架 · 阅读知识库</h3>
+            <div class="reading-tabs" id="readingTabs">
+              <span class="reading-tab active" data-cat="">全部分类</span>
+              <span class="reading-tab" data-cat="教材">教材</span>
+              <span class="reading-tab" data-cat="课件">课件</span>
+              <span class="reading-tab" data-cat="参考资料">参考资料</span>
+              <span class="reading-tab" data-cat="其他">其他</span>
+            </div>
+            <button class="btn primary ml" id="readingUploadBtn">⬆ 上传文档</button>
+          </div>
+          <div class="reading-drop" id="readingDrop">
+            <div class="drop-inner">
+              <div class="drop-ico">☁️</div>
+              <p>拖拽 PDF / Word / Markdown / TXT 课件到此，或点击「上传文档」</p>
+              <small>支持扩展名：.pdf · .docx · .md · .txt ｜ 单文件 ≤ 50MB ｜ 自动分块向量化</small>
+            </div>
+          </div>
+          <div class="doc-stats-bar" id="docStatsBar">
+            共 <b id="docTotal">0</b> 份文档 · 就绪 <b id="docReady">0</b> 份 · 分块总计 <b id="docChunks">0</b>
+          </div>
+          <div class="doc-list" id="docList"></div>
+        </div>
+
+        <!-- ========= page-schedule 日程 ========= -->
+        <div class="page" id="page-schedule">
+          <div class="toolbar">
+            <button class="btn primary" id="schPrev">←</button>
+            <h3 id="calTitle" class="p-title">2026 年 8 月</h3>
+            <button class="btn primary" id="schNext">→</button>
+            <button class="btn accent ml" id="schAddBtn">+ 新建日程</button>
+          </div>
+          <div class="schedule-wrap">
+            <div class="calendar">
+              <div class="cal-head">
+                <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+              </div>
+              <div class="cal-grid" id="calGrid"></div>
+              <div class="cal-legend">
+                <span><i class="dot teach"></i>教学</span>
+                <span><i class="dot research"></i>教研</span>
+                <span><i class="dot meeting"></i>会议</span>
+                <span><i class="dot life"></i>生活</span>
+                <span><i class="dot student"></i>学生</span>
+              </div>
+            </div>
+            <div class="day-detail">
+              <h3 id="dayTitle">今日日程</h3>
+              <ul id="dayList">
+                <li class="empty-state">该日暂无日程安排。</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========= page-assistant AI 教研助手 ========= -->
+        <div class="page" id="page-assistant">
+          <div class="chat-wrap">
+            <aside class="chat-left">
+              <button class="btn primary block" id="newSessionBtn">+ 新会话</button>
+              <ul id="sessionList">
+                <li class="empty-state small">暂无会话</li>
+              </ul>
+            </aside>
+            <section class="chat-right">
+              <div class="chat-history" id="chatHistory">
+                <div class="chat-placeholder">
+                  <div class="chat-hint-card">
+                    <h2>🎋 AI 教研助手 · RAG 问答</h2>
+                    <p>基于您的知识库文档，生成教案、解读课文、分析学情。</p>
+                    <div class="quick-prompts" id="quickPrompts">
+                      <span>静夜思的教学目标？</span>
+                      <span>三年级《大青树下的小学》教案</span>
+                      <span>二年级班主任家长会沟通要点</span>
+                      <span>学困生如何帮扶？</span>
+                      <span>《村居》识字教学设计</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="chat-input-wrap">
+                <div class="chat-input-row">
+                  <textarea id="chatInput" rows="2" placeholder="向 AI 教研助手提问…（Enter 发送，Shift+Enter 换行）"></textarea>
+                  <button class="btn primary" id="sendBtn">发送</button>
+                </div>
+                <div class="chat-foot-meta" id="chatFootMeta">模型：-- ｜ 知识库：已启用（top_k=3）</div>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <!-- ========= page-tools 教学工具 ========= -->
+        <div class="page" id="page-tools">
+          <div class="tabs-bar" id="toolsTabs">
+            <span class="tools-tab active" data-tool="lesson_plan">📘 教案生成</span>
+            <span class="tools-tab" data-tool="courseware">🎞️ 课件大纲</span>
+            <span class="tools-tab" data-tool="homework">📝 作业设计</span>
+            <span class="tools-tab" data-tool="paper">📑 论文提纲</span>
+          </div>
+          <div class="tools-wrap">
+            <div class="tools-form">
+              <h3 class="p-title" id="toolsFormTitle">· 教案生成参数 ·</h3>
+              <div class="form-row">
+                <label>学科</label>
+                <input id="t-subject" type="text" value="语文" />
+              </div>
+              <div class="form-row">
+                <label>年级 / 学段</label>
+                <input id="t-grade" type="text" placeholder="例：小学三年级" />
+              </div>
+              <div class="form-row">
+                <label>单元 / 册别</label>
+                <input id="t-unit" type="text" placeholder="例：上册第一单元" />
+              </div>
+              <div class="form-row">
+                <label>主题 / 课文 <span class="req">*</span></label>
+                <input id="t-topic" type="text" placeholder="例：大青树下的小学" />
+              </div>
+              <div class="form-row">
+                <label>教师备注（可选）</label>
+                <textarea id="t-extra" rows="3" placeholder="例：班级中等生多，希望练习层次分明，附板书思路"></textarea>
+              </div>
+              <div class="form-row">
+                <label>知识库引用条数</label>
+                <select id="t-topk">
+                  <option value="3">3 条（平衡）</option>
+                  <option value="5">5 条（更详实）</option>
+                  <option value="8">8 条（深度）</option>
+                </select>
+              </div>
+              <button class="btn primary block mt-2" id="toolsGenBtn">✨ 开始生成</button>
+              <div class="progress-wrap hidden" id="toolsProgress">
+                <div class="progress-track"><div class="progress-bar" id="toolsProgressBar"></div></div>
+                <div class="progress-text" id="toolsProgressText">正在结合知识库生成…</div>
+              </div>
+            </div>
+            <div class="tools-result">
+              <div class="result-toolbar">
+                <h3 id="toolsResultTitle">生成结果（点击上方按钮开始）</h3>
+                <div>
+                  <button class="btn outline small" id="toolsCopyBtn">复制</button>
+                  <button class="btn outline small" id="toolsDownloadBtn">下载 Markdown</button>
+                </div>
+              </div>
+              <div class="md" id="toolsResultBody">
+                <p class="empty-state">这里将显示 Markdown 生成结果。左侧填写参数后点击「开始生成」。</p>
+              </div>
+              <div class="refs-panel" id="toolsRefsPanel"></div>
+              <div class="history-panel">
+                <h4>📚 历史生成（最近 20 条）</h4>
+                <ul id="toolsHistoryList">
+                  <li class="empty-state small">暂无历史记录</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========= page-settings 设置与数据 ========= -->
+        <div class="page" id="page-settings">
+          <div class="tabs-bar" id="settingsTabs">
+            <span class="settings-tab active" data-tab="profile">👤 个人信息</span>
+            <span class="settings-tab" data-tab="ai">🤖 AI 配置</span>
+            <span class="settings-tab" data-tab="data">💾 数据管理</span>
+            <span class="settings-tab" data-tab="about">ℹ️ 关于</span>
+          </div>
+
+          <!-- Tab: 个人信息 -->
+          <div class="settings-pane active" data-pane="profile">
+            <div class="card">
+              <h3 class="p-title">教师基本信息</h3>
+              <div class="form-grid">
+                <div class="form-row">
+                  <label>教师姓名</label>
+                  <input id="s-user-name" type="text" placeholder="例：刘老师" />
+                </div>
+                <div class="form-row">
+                  <label>学段 / 学科</label>
+                  <input id="s-subject" type="text" placeholder="例：小学语文" />
+                </div>
+                <div class="form-row">
+                  <label>年级</label>
+                  <input id="s-grade" type="text" placeholder="例：三年级" />
+                </div>
+                <div class="form-row">
+                  <label>默认城市</label>
+                  <input id="s-default-city" type="text" placeholder="例：常德·汉寿" />
+                </div>
+                <div class="form-row">
+                  <label>城市纬度 lat</label>
+                  <input id="s-city-lat" type="text" placeholder="例：28.91" />
+                </div>
+                <div class="form-row">
+                  <label>城市经度 lon</label>
+                  <input id="s-city-lon" type="text" placeholder="例：111.97" />
+                </div>
+                <div class="form-row span2">
+                  <label>座右铭 / 个性化签名</label>
+                  <textarea id="s-motto" rows="3" placeholder="例：教学相长，宁静致远"></textarea>
+                </div>
+              </div>
+              <div class="form-actions">
+                <button class="btn primary" id="saveProfileBtn">💾 保存个人信息</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab: AI 配置 -->
+          <div class="settings-pane" data-pane="ai">
+            <div class="card">
+              <h3 class="p-title">大模型接入（DeepSeek / OpenAI 兼容 · sk-XXX 开头）</h3>
+              <p class="tip">🔒 所有密钥仅存储在本地后端数据库，不会泄露到任何第三方。密码框在重新打开时不回填原值，若需修改请重新输入。</p>
+
+              <div class="form-row key-row">
+                <label>DeepSeek / OpenAI 兼容 API Key</label>
+                <input id="s-deepseek-key" type="password" class="mono" placeholder="sk-xxxxxxxxxxxxxxxx" autocomplete="off" />
+                <button class="btn outline small test-btn" data-prov="deepseek">测试连通</button>
+              </div>
+
+              <div class="form-row key-row">
+                <label>OpenAI / 其他兼容 API Key（可选）</label>
+                <input id="s-openai-key" type="password" class="mono" placeholder="sk-xxxxxxxxxxxxxxxx" autocomplete="off" />
+                <button class="btn outline small test-btn" data-prov="deepseek">测试连通</button>
+              </div>
+
+              <div class="form-row key-row">
+                <label>智谱 AI / GLM Key（格式 xxxxxxxx.yyyyyyyy · 用于 embedding & glm-4 聊天）</label>
+                <input id="s-zhipu-key" type="password" class="mono" placeholder="xxxxxxxx.yyyyyyyy" autocomplete="off" />
+                <button class="btn outline small test-btn" data-prov="zhipu">测试连通</button>
+              </div>
+
+              <div class="form-actions">
+                <button class="btn primary" id="saveAIKeysBtn">💾 保存 API Key</button>
+              </div>
+
+              <div class="card-note">
+                <b>使用优先级：</b>
+                聊天模型优先使用 DeepSeek/OpenAI Key；Embedding 与知识库向量化优先使用智谱 Key。未配置时后端会使用"模板占位"返回。
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab: 数据管理 -->
+          <div class="settings-pane" data-pane="data">
+            <div class="card">
+              <h3 class="p-title">知识库 / 向量库操作</h3>
+              <div class="danger-zone">
+                <button class="btn warn" id="rebuildKbBtn">🔧 一键重建向量库（对所有 ready 文档重新分块 & Embedding）</button>
+                <button class="btn accent" id="exportDataBtn">⬇️ 一键导出全部数据（JSON）</button>
+              </div>
+              <div class="progress-wrap hidden" id="kbProgress">
+                <div class="progress-track"><div class="progress-bar" id="kbProgressBar"></div></div>
+                <div class="progress-text" id="kbProgressText">处理中…</div>
+              </div>
+            </div>
+
+            <div class="card">
+              <h3 class="p-title">知识库文档一览</h3>
+              <div class="kb-doc-list" id="kbDocList">
+                <p class="empty-state small">暂无文档</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab: 关于 -->
+          <div class="settings-pane" data-pane="about">
+            <div class="card about-card">
+              <div class="about-brand">
+                <div class="seal big">教</div>
+                <div>
+                  <h3>教学助手 · 国风教研工作台</h3>
+                  <p class="ver">版本号 <span id="about-version">--</span></p>
+                </div>
+              </div>
+              <div class="about-grid">
+                <div class="about-item"><span>后端健康状态</span><b id="about-health">检测中…</b></div>
+                <div class="about-item"><span>大模型 Key 已配置</span><b id="about-has-llm">--</b></div>
+                <div class="about-item"><span>Embedding Key 已配置</span><b id="about-has-embed">--</b></div>
+                <div class="about-item"><span>向量库总 chunk 数</span><b id="about-kb-chunks">--</b></div>
+                <div class="about-item"><span>向量库文档数</span><b id="about-kb-docs">--</b></div>
+                <div class="about-item"><span>Embedding 维度</span><b id="about-kb-dim">--</b></div>
+              </div>
+              <div class="thanks">
+                <h4>🙏 致谢</h4>
+                <p>本项目基于 FastAPI · SQLite · 智谱 Embedding · DeepSeek/OpenAI 兼容大模型 · 纯前端国风 UI 打造，为一线语文教师减负增效。感谢所有开源作者与前贤的语文教研智慧。</p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </section>
+    </main>
+  </div>
+
+  <!-- ================= 弹窗：新建收集箱条目 ================= -->
+  <div class="modal" id="inbox-modal">
+    <div class="modal-body">
+      <div class="modal-top">
+        <h3>📝 新建收集箱条目</h3>
+        <button class="modal-close" data-close="inbox-modal">×</button>
+      </div>
+      <div class="modal-content">
+        <div class="form-row">
+          <label>类型</label>
+          <select id="ib-type">
+            <option value="note">📝 笔记</option>
+            <option value="idea">💡 灵感</option>
+            <option value="todo">✅ 待办</option>
+            <option value="student">👧 学生情况</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>标题 <span class="req">*</span></label>
+          <input id="ib-title" type="text" placeholder="例：家长会家长发言要点" />
+        </div>
+        <div class="form-row">
+          <label>内容</label>
+          <textarea id="ib-content" rows="4" placeholder="具体内容…"></textarea>
+        </div>
+        <div class="form-row">
+          <label>标签（英文逗号分隔）</label>
+          <input id="ib-tags" type="text" placeholder="例：家长会,三年级,重点" />
+        </div>
+        <div class="form-row inline">
+          <label><input type="checkbox" id="ib-pinned" /> 置顶</label>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn outline" data-close="inbox-modal">取消</button>
+        <button class="btn primary" id="ib-save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 弹窗：新建日程 ================= -->
+  <div class="modal" id="schedule-modal">
+    <div class="modal-body">
+      <div class="modal-top">
+        <h3>📅 新建日程</h3>
+        <button class="modal-close" data-close="schedule-modal">×</button>
+      </div>
+      <div class="modal-content">
+        <div class="form-row">
+          <label>标题 <span class="req">*</span></label>
+          <input id="sc-title" type="text" placeholder="例：三（2）班语文公开课" />
+        </div>
+        <div class="form-row two">
+          <div>
+            <label>日期 <span class="req">*</span></label>
+            <input id="sc-date" type="date" />
+          </div>
+          <div>
+            <label>分类</label>
+            <select id="sc-category">
+              <option value="teach">📖 教学</option>
+              <option value="research">🔬 教研</option>
+              <option value="meeting">🗣️ 会议</option>
+              <option value="life">🍃 生活</option>
+              <option value="student">👧 学生</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row two">
+          <div>
+            <label>开始时间</label>
+            <input id="sc-start" type="time" value="14:00" />
+          </div>
+          <div>
+            <label>结束时间</label>
+            <input id="sc-end" type="time" value="15:30" />
+          </div>
+        </div>
+        <div class="form-row">
+          <label>地点 / 备注</label>
+          <textarea id="sc-content" rows="3" placeholder="例：多媒体教室 3 · 请带好教案、板书设计稿"></textarea>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn outline" data-close="schedule-modal">取消</button>
+        <button class="btn primary" id="sc-save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 弹窗：上传文档 ================= -->
+  <div class="modal" id="upload-modal">
+    <div class="modal-body">
+      <div class="modal-top">
+        <h3>⬆️ 上传文档到知识库</h3>
+        <button class="modal-close" data-close="upload-modal">×</button>
+      </div>
+      <div class="modal-content">
+        <div class="form-row">
+          <label>分类</label>
+          <select id="up-category">
+            <option value="教材">教材</option>
+            <option value="课件">课件</option>
+            <option value="参考资料">参考资料</option>
+            <option value="其他">其他</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>选择文件 <span class="req">*</span></label>
+          <div class="file-pick-row">
+            <input id="up-file" type="file" accept=".pdf,.docx,.md,.txt" />
+            <span class="file-name" id="up-file-name">未选择文件</span>
+          </div>
+          <small class="tip">支持 .pdf / .docx / .md / .txt，单文件 ≤ 50MB</small>
+        </div>
+        <div class="progress-wrap hidden" id="uploadProgress">
+          <div class="progress-track"><div class="progress-bar" id="uploadProgressBar"></div></div>
+          <div class="progress-text" id="uploadProgressText">准备上传…</div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn outline" data-close="upload-modal">取消</button>
+        <button class="btn primary" id="up-save">开始上传</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 搜索结果弹窗 ================= -->
+  <div class="modal" id="search-modal">
+    <div class="modal-body wide">
+      <div class="modal-top">
+        <h3>🔎 知识库全局搜索结果</h3>
+        <button class="modal-close" data-close="search-modal">×</button>
+      </div>
+      <div class="modal-content">
+        <div id="searchResultBody">
+          <p class="empty-state">输入关键词后回车搜索。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <script src="./poems.js?v=2.1.0"></script>
+  <script src="./static/app.js?v=2.1.0"></script>
+</body>
+</html>
