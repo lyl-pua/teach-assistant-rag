@@ -127,7 +127,7 @@ def get_default_city() -> tuple[str, float, float]:
 
 
 # ================ 常量 ================
-APP_VERSION = "2.3.0"
+APP_VERSION = "2.4.0"
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "app.db")
 VECTORSTORE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "vectorstore.pkl")
 DOCUMENTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "documents")
