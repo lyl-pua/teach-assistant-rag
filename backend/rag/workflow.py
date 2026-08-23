@@ -106,6 +106,11 @@ class RAGGraph:
 
     # ---------- 节点 1：retrieve ----------
     def retrieve_node(self, state: RAGState) -> RAGState:
+        """
+        Token 优化：
+        1. score 阈值过滤：丢弃 score < config.RETRIEVAL_SCORE_THRESHOLD 的低相关 chunk
+        2. chunk 文本截断：注入 prompt 时每个 chunk 限制 config.CHUNK_TEXT_MAX_CHARS 字符
+        """
         from rag.embeddings import ZhipuEmbedding
         from rag.vectorstore import get_vector_store
 
@@ -116,7 +121,18 @@ class RAGGraph:
             embed = ZhipuEmbedding()
             qv = embed.embed_query(question)
             vs = get_vector_store()
-            chunks = vs.search(qv, top_k=top_k)
+            raw_chunks = vs.search(qv, top_k=top_k)
+            # Token 优化 1：score 阈值过滤
+            threshold = getattr(config, "RETRIEVAL_SCORE_THRESHOLD", 0.30)
+            chunks = [c for c in raw_chunks if float(c.get("score", 0.0)) >= threshold]
+            # 若全部被过滤（极端情况），保留 score 最高的 1 条作为兜底
+            if not chunks and raw_chunks:
+                chunks = [max(raw_chunks, key=lambda c: float(c.get("score", 0.0)))]
+            # Token 优化 2：chunk 文本截断（避免长 chunk 吃满 token）
+            max_chars = getattr(config, "CHUNK_TEXT_MAX_CHARS", 500)
+            for c in chunks:
+                if c.get("text") and len(c["text"]) > max_chars:
+                    c["text"] = c["text"][:max_chars]
             st["retrieved_chunks"] = chunks
             st["refs"] = _build_refs(chunks)
         except Exception as e:
@@ -157,12 +173,26 @@ class RAGGraph:
             f"【参考资料】\n{context}\n\n"
             "【回答】\n"
         )
+
+        # Token 优化：按问题长度 + chunk 数动态调整 max_tokens
+        # 短问题（<30字）+ 少 chunk（<=1）：800（简短回答）
+        # 中等问题（30-100字）或中等 chunk（2-3）：1200（标准回答）
+        # 长问题（>100字）或多 chunk（>=4）：1800（详细回答）
+        q_len = len(question)
+        c_len = len(chunks)
+        if q_len < 30 and c_len <= 1:
+            max_tokens = 800
+        elif q_len > 100 or c_len >= 4:
+            max_tokens = 1800
+        else:
+            max_tokens = 1200
+
         try:
             st["answer"] = GENERATOR.chat(
                 prompt=prompt,
                 system_prompt=system_prompt,
                 temperature=0.7,
-                max_tokens=1500,
+                max_tokens=max_tokens,
             )
         except Exception as e:
             st["error"] = (st.get("error") or "") + f" 生成失败: {e}"

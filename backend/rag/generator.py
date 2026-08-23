@@ -3,7 +3,9 @@
 LLM 生成器封装
 - 优先 DeepSeek (sk-*)，兜底智谱 glm-4-flash
 - 非流式调用
+- Token 优化：内存缓存相同 prompt（TTL = config.LLM_CACHE_TTL）
 """
+import hashlib
 import json
 import time
 from typing import Optional
@@ -18,6 +20,57 @@ DEEPSEEK_MODEL = "deepseek-chat"
 ZHIPU_CHAT_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
 ZHIPU_MODEL = "glm-4-flash"
 ZHIPU_LONG_MODEL = "glm-4"
+
+# =========== Token 优化：LLM 查询缓存 ===========
+# 缓存结构：{cache_key: {"content": str, "ts": float, "usage": dict}}
+_LLM_CACHE: dict = {}
+
+
+def _cache_key(prompt: str, system_prompt: Optional[str], model: str) -> str:
+    """生成缓存键：prompt + system_prompt + model 的 hash"""
+    raw = f"{model}|{system_prompt or ''}|{prompt}"
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()
+
+
+def _get_cached(key: str) -> Optional[dict]:
+    """从缓存获取，过期返回 None 并清理"""
+    ttl = getattr(config, "LLM_CACHE_TTL", 300)
+    item = _LLM_CACHE.get(key)
+    if not item:
+        return None
+    if time.time() - item["ts"] > ttl:
+        _LLM_CACHE.pop(key, None)
+        return None
+    return item
+
+
+def _set_cached(key: str, content: str, usage: dict) -> None:
+    """写入缓存，超过 200 条时清理最旧的"""
+    if len(_LLM_CACHE) >= 200:
+        # 清理最旧的 50 条
+        sorted_keys = sorted(_LLM_CACHE.keys(), key=lambda k: _LLM_CACHE[k]["ts"])
+        for k in sorted_keys[:50]:
+            _LLM_CACHE.pop(k, None)
+    _LLM_CACHE[key] = {"content": content, "ts": time.time(), "usage": usage}
+
+
+def clear_llm_cache() -> int:
+    """清空缓存，返回清理条数"""
+    n = len(_LLM_CACHE)
+    _LLM_CACHE.clear()
+    return n
+
+
+def get_cache_stats() -> dict:
+    """缓存统计"""
+    ttl = getattr(config, "LLM_CACHE_TTL", 300)
+    now = time.time()
+    valid = sum(1 for v in _LLM_CACHE.values() if now - v["ts"] <= ttl)
+    return {
+        "total_entries": len(_LLM_CACHE),
+        "valid_entries": valid,
+        "ttl_seconds": ttl,
+    }
 
 
 def _record_token_usage(usage: dict):
@@ -116,8 +169,21 @@ class LLMGenerator:
         temperature: float = 0.7,
         max_tokens: int = 1500,
         timeout: int = 120,
+        use_cache: bool = True,
     ) -> str:
         provider, endpoint, model = _provider_info()
+
+        # Token 优化：缓存命中检查（仅 temperature 较低时缓存，避免高创造性场景误命中）
+        cache_key = None
+        if use_cache and temperature <= 0.5:
+            cache_key = _cache_key(prompt, system_prompt, model)
+            cached = _get_cached(cache_key)
+            if cached:
+                # 缓存命中：复用 usage（标记为 cached），不调 API
+                self.last_usage = dict(cached["usage"])
+                self.last_usage["cached"] = True
+                return cached["content"]
+
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
@@ -165,6 +231,10 @@ class LLMGenerator:
             _record_token_usage(self.last_usage)
         except Exception:
             pass
+
+        # Token 优化：写入缓存（仅 temperature 较低时）
+        if cache_key:
+            _set_cached(cache_key, content, self.last_usage)
 
         return content or ""
 

@@ -271,7 +271,8 @@ async def _real_stream(question: str, rag_result: dict) -> AsyncIterable[str]:
         "messages": messages,
         "stream": True,
         "temperature": 0.7,
-        "max_tokens": 1500,
+        # Token 优化：按问题长度动态调整 max_tokens（与 workflow.generate_node 一致）
+        "max_tokens": 800 if len(question) < 30 else (1800 if len(question) > 100 else 1200),
     }
     if provider == "deepseek":
         key = config.get_sk_key()

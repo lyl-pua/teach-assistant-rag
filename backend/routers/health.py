@@ -128,3 +128,24 @@ def token_stats():
         return get_token_stats()
     except Exception as e:
         return {"total": {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}, "by_model": [], "recent": [], "error": str(e)}
+
+
+@router.get("/stats/cache")
+def cache_stats():
+    """LLM 查询缓存统计（Token 优化）"""
+    try:
+        from rag.generator import get_cache_stats
+        return get_cache_stats()
+    except Exception as e:
+        return {"total_entries": 0, "valid_entries": 0, "ttl_seconds": 300, "error": str(e)}
+
+
+@router.post("/cache/clear")
+def cache_clear():
+    """清空 LLM 查询缓存"""
+    try:
+        from rag.generator import clear_llm_cache
+        n = clear_llm_cache()
+        return {"cleared": True, "removed": n}
+    except Exception as e:
+        return {"cleared": False, "error": str(e)}

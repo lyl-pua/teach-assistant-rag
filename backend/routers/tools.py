@@ -21,6 +21,18 @@ router = APIRouter(prefix="")
 
 ALLOWED_TYPES = {"lesson_plan", "courseware", "homework", "paper"}
 
+# Token 优化：按 tool_type 精细化 max_tokens，避免一刀切浪费
+# lesson_plan 结构复杂（目标/重难点/过程/板书/反思）需较多 token
+# paper 论文需最长
+# courseware 课件大纲每页要点简短
+# homework 分层作业相对短
+TOOL_MAX_TOKENS = {
+    "lesson_plan": 3000,
+    "courseware": 2000,
+    "homework": 1500,
+    "paper": 3500,
+}
+
 
 class ToolGenerate(BaseModel):
     tool_type: str
@@ -103,7 +115,11 @@ def _build_prompt_and_title(body: ToolGenerate, refs_text: str) -> tuple[str, st
 
 # =========== 知识库检索辅助 ===========
 def _retrieve_for_tool(body: ToolGenerate):
-    """返回 (chunks, refs, ref_text_block)"""
+    """返回 (chunks, refs, ref_text_block)
+    Token 优化：
+    1. score 阈值过滤：丢弃 score < config.RETRIEVAL_SCORE_THRESHOLD 的低相关 chunk
+    2. chunk 文本截断：注入 prompt 时每个 chunk 限制 config.CHUNK_TEXT_MAX_CHARS 字符
+    """
     query_parts = [body.subject, body.grade, body.unit, body.topic, body.extra]
     query = " ".join([p for p in query_parts if p]).strip() or (body.tool_type or "")
     top_k = max(1, min(int(body.top_k or 4), 10))
@@ -116,7 +132,13 @@ def _retrieve_for_tool(body: ToolGenerate):
         embed = ZhipuEmbedding()
         qv = embed.embed_query(query)
         vs = get_vector_store()
-        chunks = vs.search(qv, top_k=top_k)
+        raw_chunks = vs.search(qv, top_k=top_k)
+        # Token 优化 1：score 阈值过滤
+        threshold = getattr(config, "RETRIEVAL_SCORE_THRESHOLD", 0.30)
+        chunks = [c for c in raw_chunks if float(c.get("score", 0.0)) >= threshold]
+        # 若全部被过滤（极端情况），保留 score 最高的 1 条作为兜底
+        if not chunks and raw_chunks:
+            chunks = [max(raw_chunks, key=lambda c: float(c.get("score", 0.0)))]
         for c in chunks:
             refs.append({
                 "doc_name": c.get("doc_name", ""),
@@ -126,11 +148,13 @@ def _retrieve_for_tool(body: ToolGenerate):
     except Exception:
         chunks = []
         refs = []
-    # 拼接 ref_text_block
+    # 拼接 ref_text_block（Token 优化 2：每个 chunk 截断到 CHUNK_TEXT_MAX_CHARS）
+    max_chars = getattr(config, "CHUNK_TEXT_MAX_CHARS", 500)
     parts = []
     for i, c in enumerate(chunks, 1):
         name = c.get("doc_name") or "未知"
-        parts.append(f"【资料{i}·{name}】\n{c.get('text') or ''}")
+        text = (c.get("text") or "")[:max_chars]
+        parts.append(f"【资料{i}·{name}】\n{text}")
     ref_block = "\n\n".join(parts)
     return chunks, refs, ref_block
 
@@ -238,12 +262,14 @@ def generate_tool(body: ToolGenerate):
     if config.has_any_llm_key():
         from rag.generator import GENERATOR
         system_prompt = "你是一位资深小学语文教研员，擅长撰写教案、课件、作业、教学论文。请用 Markdown 输出结构化内容，具体、可操作。"
+        # Token 优化：按 tool_type 动态调整 max_tokens
+        max_tokens = TOOL_MAX_TOKENS.get(body.tool_type, 2500)
         try:
             result_text = GENERATOR.chat(
                 prompt=prompt,
                 system_prompt=system_prompt,
                 temperature=0.7,
-                max_tokens=2500,
+                max_tokens=max_tokens,
                 timeout=180,
             )
             model_used = GENERATOR.current_model()

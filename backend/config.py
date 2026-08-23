@@ -124,3 +124,11 @@ EMBEDDING_DIM = 2048
 # 分块参数
 CHUNK_SIZE = 600
 CHUNK_OVERLAP = 100
+
+# ================ Token 优化参数 ================
+# 检索 score 阈值：低于此值的 chunk 视为不相关，不注入 prompt（省 token）
+RETRIEVAL_SCORE_THRESHOLD = 0.30
+# 单个 chunk 注入 prompt 时的最大字符数（避免长 chunk 吃满 token）
+CHUNK_TEXT_MAX_CHARS = 500
+# LLM 查询缓存时间（秒）：相同 prompt 在此时间内直接返回缓存结果
+LLM_CACHE_TTL = 300
