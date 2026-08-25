@@ -2159,6 +2159,97 @@ function valOf(id, def) {
   return (v === null || v === undefined || v === '') ? def : v;
 }
 
+/* ========== PPT 全局导出函数（供工具栏按钮 + PPT 预览区按钮复用） ========== */
+function downloadPPTX(runId, title) {
+  if (runId == null) {
+    toast('当前结果缺少 runId，无法下载 PPTX', 'warn');
+    return;
+  }
+  var a = document.createElement('a');
+  a.href = API_BASE + '/tools/' + encodeURIComponent(String(runId)) + '/export_pptx';
+  a.download = ((title || '教学演示文稿').replace(/[\/\\:*?"<>|]/g, '_')) + '.pptx';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function () { try { document.body.removeChild(a); } catch (_) {} }, 1000);
+  toast('正在下载 PPTX 文件…', 'info');
+}
+function downloadPPTJSON(title, slides) {
+  if (!slides || !slides.length) { toast('暂无可导出的幻灯片数据', 'warn'); return; }
+  var blob = new Blob([JSON.stringify({ title: title || 'PPT', slides: slides }, null, 2)], { type: 'application/json;charset=utf-8' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = ((title || 'PPT').replace(/[\/\\:*?"<>|]/g, '_')) + '.slides.json';
+  a.click();
+  setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+  toast('已导出 slides.json', 'success');
+}
+/* 动态切换教学工具结果右上角工具栏：PPT 类型显示「下载 PPTX」主按钮，其它显示「下载 Markdown」 */
+function updateToolsToolbar(toolType, runId, title, slides) {
+  var tb = document.querySelector('.tools-result .result-toolbar');
+  if (!tb) return;
+  var btnsWrap = tb.querySelector('div.buttons-slot');
+  if (!btnsWrap) {
+    // 第一次调用：把原来写死的两个按钮挪进 buttons-slot 方便整体替换
+    var oldBtns = tb.querySelectorAll(':scope > div > button');
+    btnsWrap = document.createElement('div');
+    btnsWrap.className = 'buttons-slot';
+    if (oldBtns.length) {
+      var parent = oldBtns[0].parentNode;
+      for (var i = 0; i < oldBtns.length; i++) btnsWrap.appendChild(oldBtns[i]);
+      parent.appendChild(btnsWrap);
+    } else {
+      tb.appendChild(btnsWrap);
+    }
+  }
+  if (toolType === 'ppt') {
+    // PPT 模式：复制 / JSON 数据 / ⬇ 下载 PPTX（主）
+    btnsWrap.innerHTML =
+      '<button class="btn outline small" data-act="copy">复制</button>' +
+      '<button class="btn outline small" data-act="json">📋 JSON 数据</button>' +
+      '<button class="btn primary small" data-act="pptx">⬇ 下载 PPTX</button>';
+    btnsWrap.querySelector('[data-act=pptx]').addEventListener('click', function () {
+      downloadPPTX(runId, title);
+    });
+    btnsWrap.querySelector('[data-act=json]').addEventListener('click', function () {
+      downloadPPTJSON(title, slides);
+    });
+    btnsWrap.querySelector('[data-act=copy]').addEventListener('click', function () {
+      var body = document.getElementById('toolsResultBody');
+      if (!body) return;
+      var txt = body.innerText || body.textContent || '';
+      if (!txt || txt.indexOf('这里将显示') >= 0) { toast('暂无可复制内容', 'warn'); return; }
+      copyToClipboard(txt);
+    });
+  } else {
+    // 非 PPT：恢复 复制 / 下载 Markdown
+    btnsWrap.innerHTML =
+      '<button class="btn outline small" data-act="copy">复制</button>' +
+      '<button class="btn outline small" data-act="md">下载 Markdown</button>';
+    btnsWrap.querySelector('[data-act=copy]').addEventListener('click', function () {
+      var body = document.getElementById('toolsResultBody');
+      if (!body) return;
+      var txt = body.innerText || body.textContent || '';
+      if (!txt || txt.indexOf('这里将显示') >= 0) { toast('暂无可复制内容', 'warn'); return; }
+      copyToClipboard(txt);
+    });
+    btnsWrap.querySelector('[data-act=md]').addEventListener('click', function () {
+      var resEl = document.getElementById('toolsResultBody');
+      if (!resEl) return;
+      var raw = resEl.getAttribute('data-raw-md') || (resEl.innerText || resEl.textContent || '');
+      if (!raw || raw.indexOf('这里将显示') >= 0) { toast('暂无可下载内容', 'warn'); return; }
+      var titleEl = document.getElementById('toolsResultTitle');
+      var dlTitle = titleEl ? (titleEl.textContent || '生成结果').replace(/[\/\\:*?"<>|]/g,'_') : '生成结果';
+      var blob = new Blob([raw], { type: 'text/markdown;charset=utf-8' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = dlTitle + '.md';
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+      toast('已下载 Markdown', 'success');
+    });
+  }
+}
+
 /* 全局 PPT 预览渲染（给 renderResultPanel 与 demo-ppt.html 复用）*/
 function renderPPTPreview(slides, body, runId, title) {
   title = title || '教学演示文稿';
@@ -2220,29 +2311,9 @@ function renderPPTPreview(slides, body, runId, title) {
     var nx = nav.querySelector('#ppt-next');
     if (nx) nx.addEventListener('click', function () { render(cur + 1); });
     var ppx = nav.querySelector('#ppt-pptx');
-    if (ppx) ppx.addEventListener('click', function () {
-      if (runId == null) {
-        toast('当前结果缺少 runId，无法下载 PPTX', 'warn');
-        return;
-      }
-      var a = document.createElement('a');
-      a.href = API_BASE + '/tools/' + encodeURIComponent(runId) + '/export_pptx';
-      a.download = ((title || '教学演示文稿').replace(/[\/\\:*?"<>|]/g, '_')) + '.pptx';
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(function () { try { document.body.removeChild(a); } catch (_) {} }, 1000);
-      toast('正在下载 PPTX 文件…', 'info');
-    });
+    if (ppx) ppx.addEventListener('click', function () { downloadPPTX(runId, title); });
     var pjn = nav.querySelector('#ppt-json');
-    if (pjn) pjn.addEventListener('click', function () {
-      var blob = new Blob([JSON.stringify({ title: title, slides: slides }, null, 2)], { type: 'application/json;charset=utf-8' });
-      var a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = (title || 'PPT') + '.slides.json';
-      a.click();
-      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
-      toast('已导出 slides.json', 'success');
-    });
+    if (pjn) pjn.addEventListener('click', function () { downloadPPTJSON(title, slides); });
   }
   wrap.appendChild(nav);
   wrap.appendChild(stage);
@@ -2252,6 +2323,8 @@ function renderPPTPreview(slides, body, runId, title) {
 }
 
 function renderResultPanel(toolType, title, md, refs, slides, runId) {
+  // 动态切换右上角工具栏按钮：PPT 模式主按钮 = ⬇ 下载 PPTX
+  updateToolsToolbar(toolType, runId, title, slides || []);
   var tEl = document.getElementById('toolsResultTitle');
   if (tEl) tEl.textContent = title;
   var body = document.getElementById('toolsResultBody');

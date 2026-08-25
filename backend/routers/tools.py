@@ -560,14 +560,27 @@ def _render_markdown_into_tf(tf, text: str):
 
 
 def _build_pptx_file_bytes(title: str, slides: list, theme_info: dict = None) -> bytes:
-    """把结构化 slides 生成 .pptx 文件（16:9，国风+玻璃拟态配色：青黛/墨蓝/茶褐/月白）。"""
+    """把结构化 slides 生成 .pptx 文件（16:9，国风+玻璃拟态配色：青黛/墨蓝/茶褐/月白）。
+    本版新增：每页写入原生 <p:transition> 切换动画（浮现/揭开/擦除等）+ <p:timing> 段落逐条浮现入场。
+    PowerPoint/WPS 全屏放映即有动态效果。
+    """
     try:
         from pptx import Presentation
         from pptx.util import Inches, Pt, Emu
         from pptx.dml.color import RGBColor
         from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+        from lxml import etree
     except Exception as e:
-        raise HTTPException(500, f"服务器未安装 python-pptx，请管理员执行 pip install python-pptx：{e}")
+        raise HTTPException(500, f"服务器未安装 python-pptx / lxml，请管理员执行 pip install python-pptx lxml：{e}")
+
+    # ========= OOXML 命名空间常量 =========
+    NS_P = "http://schemas.openxmlformats.org/presentationml/2006/main"
+    NS_A = "http://schemas.openxmlformats.org/drawingml/2006/main"
+    NS_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    P = f"{{{NS_P}}}"
+    A = f"{{{NS_A}}}"
+    QN_P = lambda tag: f"{NS_P}:{tag}"  # noqa: E731
+    QN_A = lambda tag: f"{NS_A}:{tag}"  # noqa: E731
 
     theme_info = theme_info or {}
     subject = theme_info.get("subject") or "语文"
@@ -581,6 +594,228 @@ def _build_pptx_file_bytes(title: str, slides: list, theme_info: dict = None) ->
 
     SW, SH = prs.slide_width, prs.slide_height
     blank_layout = prs.slide_layouts[6]  # 空白版式
+
+    # ========= 动画：页面切换 + 对象入场 =========
+    TRANSITION_PRESETS = {
+        # 浮现（fade）——用户"浮现"核心诉求
+        "fade": lambda: etree.fromstring(
+            f'<p:transition xmlns:p="{NS_P}"><p:fade/></p:transition>'
+        ),
+        # 推挤（自下向上推进）——"揭开"体感 1
+        "push": lambda: etree.fromstring(
+            f'<p:transition xmlns:p="{NS_P}"><p:push dir="u"/></p:transition>'
+        ),
+        # 擦除 / 拉开（自左向右揭开）——"揭开"体感 2（最常用）
+        "wipe": lambda: etree.fromstring(
+            f'<p:transition xmlns:p="{NS_P}"><p:wipe dir="r"/></p:transition>'
+        ),
+        # 覆盖（自左向右覆盖）——"揭开"变体
+        "cover": lambda: etree.fromstring(
+            f'<p:transition xmlns:p="{NS_P}"><p:cover dir="r"/></p:transition>'
+        ),
+        # 分割（水平向外对开）——"揭开"变体
+        "split": lambda: etree.fromstring(
+            f'<p:transition xmlns:p="{NS_P}"><p:split orient="horz" dir="out"/></p:transition>'
+        ),
+        # 溶解 dissolve —— 强浮现/渐隐渐显
+        "dissolve": lambda: etree.fromstring(
+            f'<p:transition xmlns:p="{NS_P}"><p:dissolve/></p:transition>'
+        ),
+    }
+
+    # PPT 数据 slides[i].animation 字段 → (切换类型, 入场段落模式)
+    def _resolve_anim_preset(anim_text: str, is_cover: bool, is_end: bool, is_toc: bool, idx: int):
+        t = (anim_text or "").strip()
+        # 用户强需求关键字优先
+        if any(k in t for k in ("浮现", "淡入", "渐现", "渐显", "fade", "appear")):
+            return ("fade", "by_para_fade")
+        if any(k in t for k in ("揭开", "掀开", "展开", "拉开", "wipe", "uncover")):
+            return ("wipe", "by_para_fade")
+        if any(k in t for k in ("推挤", "推进", "推入", "push")):
+            return ("push", "by_para_fade")
+        if any(k in t for k in ("覆盖", "cover")):
+            return ("cover", "by_para_fade")
+        if any(k in t for k in ("溶解", "融", "dissolve")):
+            return ("dissolve", "by_para_fade")
+        if any(k in t for k in ("分割", "split", "对开")):
+            return ("split", "by_para_fade")
+        if any(k in t for k in ("呼吸", "强调", "缩放", "zoom")):
+            # 用 fade 切换 + 入场多一点延迟，体感"呼吸浮现"
+            return ("fade", "by_para_fade_slow")
+        if any(k in t for k in ("逐行", "逐条", "逐个", "顺序")):
+            return ("fade", "by_para_fade")
+        # 页面语义默认
+        if is_cover:  return ("fade",     "all_together_fade")   # 封面：整体浮现
+        if is_toc:    return ("wipe",     "by_para_fade")        # 目录：逐条揭开
+        if is_end:    return ("dissolve", "all_together_fade")   # 封底：整体溶解
+        # 正文页交替：奇=浮现 偶=揭开
+        return (("fade" if idx % 2 == 1 else "wipe"), "by_para_fade")
+
+    def _apply_slide_transition(slide, kind="fade", dur_ms: int = 650):
+        """把 <p:transition> 写入 slide._element（p:sld）。
+        OOXML 标准顺序：p:cSld -> p:clrMapOvr -> p:transition -> p:timing -> p:extLst
+        必须保证插入在 <p:clrMapOvr> 之后；否则 XML 非法会被下游解析器静默丢弃。
+        """
+        maker = TRANSITION_PRESETS.get(kind) or TRANSITION_PRESETS["fade"]
+        try:
+            # 先移除旧 transition 避免重复
+            for old in list(slide._element.findall(P + "transition")):
+                slide._element.remove(old)
+            trans = maker()
+            # 查找 clrMapOvr 位置，transition 放其后
+            clr = slide._element.find(P + "clrMapOvr")
+            if clr is not None:
+                idx_clr = list(slide._element).index(clr)
+                slide._element.insert(idx_clr + 1, trans)
+            else:
+                # 没找到 clrMapOvr（理论不会有），放末尾
+                slide._element.append(trans)
+        except Exception:
+            pass
+
+    def _apply_entry_animations(slide, mode="by_para_fade"):
+        """把 <p:timing> 段落入场浮现动画写入 slide._element。
+        位置：<p:transition> 之后（OOXML 要求 transition 先，timing 后）。
+        """
+        try:
+            shapes = list(slide.shapes)
+            if not shapes:
+                return
+            cTn_paras = []
+            delay_acc_ms = 0
+            dur_para = 500 if mode == "by_para_fade_slow" else 350
+            step_delay = 180 if mode == "by_para_fade_slow" else 120
+            for sp in shapes:
+                # 取 spId：统一用 cNvPr/@id
+                cNvPr = sp._element.find(".//" + P + "cNvPr")
+                if cNvPr is None:
+                    cNvPr = sp._element.find(".//" + A + "cNvPr")
+                if cNvPr is None:
+                    continue
+                sp_id = cNvPr.get("id")
+                if not sp_id:
+                    continue
+
+                # 取该 shape 的段落数
+                txBody = sp._element.find(".//" + P + "txBody")
+                if txBody is None:
+                    txBody = sp._element.find(".//" + A + "txBody")
+                paras_count = 1
+                if txBody is not None:
+                    paras_count = max(1, len(txBody.findall(A + "p")))
+
+                if mode == "all_together_fade":
+                    # 整体
+                    para_delay = delay_acc_ms
+                    delay_acc_ms += 250
+                    cTn_paras.append(_fade_par_xml(
+                        sp_id, idx=None, delay_ms=para_delay, dur_ms=600
+                    ))
+                else:
+                    # 逐条
+                    for pi in range(paras_count):
+                        para_delay = delay_acc_ms
+                        delay_acc_ms += step_delay
+                        cTn_paras.append(_fade_par_xml(
+                            sp_id, idx=pi, delay_ms=para_delay, dur_ms=dur_para
+                        ))
+            if not cTn_paras:
+                return
+            # 移除旧 timing
+            for old in list(slide._element.findall(P + "timing")):
+                slide._element.remove(old)
+            # 保证 transition 先有（即便默认 fade，也确保 timing 有前序元素）
+            if slide._element.find(P + "transition") is None:
+                _apply_slide_transition(slide, "fade", 500)
+            # 组装 timing
+            timing_xml = (
+                f'<p:timing xmlns:p="{NS_P}" xmlns:a="{NS_A}">'
+                f'<p:tnLst><p:par>'
+                f'<p:cTn id="1" dur="indefinite" restart="never" nodeType="tmRoot">'
+                f'<p:childTnLst>'
+                f'{"".join(cTn_paras)}'
+                f'</p:childTnLst>'
+                f'</p:cTn>'
+                f'</p:par></p:tnLst>'
+                f'<p:bldLst/>'
+                f'</p:timing>'
+            )
+            timing_el = etree.fromstring(timing_xml)
+            # 插入位置：必须在 <p:transition> 之后
+            trans_el = slide._element.find(P + "transition")
+            if trans_el is not None:
+                idx_trans = list(slide._element).index(trans_el)
+                slide._element.insert(idx_trans + 1, timing_el)
+            else:
+                slide._element.append(timing_el)
+        except Exception:
+            # 动画：渐进增强，失败不影响内容
+            pass
+
+    def _fade_par_xml(sp_id, idx=None, delay_ms=0, dur_ms=400):
+        """为单段落/单 shape 生成一条 <p:par>(Fade 浮现入场)。
+        idx=None -> 整体对象（shape）；idx=int -> 按段落索引（bldLvl）。
+        用 p:set 显示 + a:fade 效果组合的最简兼容 Fade。
+        """
+        condDelay = f'<p:cond delay="{delay_ms}"/>'
+        # 1) 显示：p:set -> objectR/TgtEl/txEl
+        tgt = ""
+        if idx is None:
+            tgt = (
+                f'<p:tgtEl><p:spTgt spid="{sp_id}"/></p:tgtEl>'
+            )
+        else:
+            tgt = (
+                f'<p:tgtEl><p:spTgt spid="{sp_id}">'
+                f'<p:txEl><p:pRg st="{idx}" end="{idx}"/></p:txEl>'
+                f'</p:spTgt></p:tgtEl>'
+            )
+        # cTn id 必须全局递增；这里直接用 hash 组合防重（只要不与同页兄弟冲突即可）
+        import hashlib
+        seed = f"{sp_id}-{idx}-{delay_ms}-{dur_ms}"
+        ctn_id1 = abs(int(hashlib.md5(seed.encode()).hexdigest()[:6], 16)) % 2100000000 + 1000
+        ctn_id2 = ctn_id1 + 1
+        ctn_id3 = ctn_id2 + 1
+        ctn_id4 = ctn_id3 + 1
+        ctn_id5 = ctn_id4 + 1
+        # 构建：<p:par condLst> 延迟 -> <p:seq concurrent="1" nextAc="seek"> 不可用；最稳：<p:par> 包 cTn+effect
+        # 使用 Fade 动画：p:animEffect transition="in" filter="fade"
+        xml = (
+            f'<p:par xmlns:p="{NS_P}" xmlns:a="{NS_A}">'
+            f'<p:cTn id="{ctn_id1}" dur="indefinite" fill="hold">'
+            f'<p:stCondLst>{condDelay}</p:stCondLst>'
+            f'<p:childTnLst>'
+            # 子 par1: 显示 (visibility set)
+            f'<p:par>'
+            f'<p:cTn id="{ctn_id2}" dur="1" fill="hold">'
+            f'<p:childTnLst>'
+            f'<p:set>'
+            f'<p:cBhvr>'
+            f'{tgt}'
+            f'<p:attrNameLst><p:attrName>style.visibility</p:attrName></p:attrNameLst>'
+            f'</p:cBhvr>'
+            f'<p:to><p:strVal val="visible"/></p:to>'
+            f'</p:set>'
+            f'</p:childTnLst>'
+            f'</p:cTn>'
+            f'</p:par>'
+            # 子 par2: Fade 浮现入场
+            f'<p:par>'
+            f'<p:cTn id="{ctn_id3}" dur="{dur_ms}" fill="hold">'
+            f'<p:childTnLst>'
+            f'<p:animEffect transition="in" filter="fade">'
+            f'<p:cBhvr additive="base" override="childStyle">'
+            f'{tgt}'
+            f'</p:cBhvr>'
+            f'</p:animEffect>'
+            f'</p:childTnLst>'
+            f'</p:cTn>'
+            f'</p:par>'
+            f'</p:childTnLst>'
+            f'</p:cTn>'
+            f'</p:par>'
+        )
+        return xml
 
     # ===== 玻璃拟态国风 4 色板 =====
     # 青黛、墨蓝、茶褐、月白；朱砂点缀；米白辅助
@@ -728,23 +963,30 @@ def _build_pptx_file_bytes(title: str, slides: list, theme_info: dict = None) ->
         _set_run_font(r, font_name, size, bold, italic, color)
         return tb
 
-    def _add_slide_notes(slide, notes_text: str, intent_text: str = "", animation_text: str = ""):
-        """把讲者备注/设计意图/动画 写入 PPT 原生 notes 页（放映者模式）。"""
-        if not (notes_text or intent_text or animation_text):
-            return
-        try:
-            notes_slide = slide.notes_slide
-            tf = notes_slide.notes_text_frame
-            parts = []
-            if intent_text:
-                parts.append("【设计意图】" + intent_text.strip())
-            if animation_text:
-                parts.append("【动画】" + animation_text.strip())
-            if notes_text:
-                parts.append("【讲师备注】" + notes_text.strip())
-            tf.text = "\n\n".join(parts)
-        except Exception:
-            pass
+    def _add_slide_notes(slide, notes_text: str, intent_text: str = "", animation_text: str = "",
+                         trans_kind: str = "fade", entry_mode: str = "by_para_fade"):
+        """写入 PPT 原生 notes 页（放映者模式），并写入页面切换+对象入场 OOXML 动画。
+        注意：此函数是逐页写入动画的**唯一出口**——所有分支（封面/目录/正文/封底）在 continue
+        或进入下一页之前都调用它，因此把 transition + timing 收口在这里避免漏写。
+        """
+        # ① 写 notes
+        if notes_text or intent_text or animation_text:
+            try:
+                notes_slide = slide.notes_slide
+                tf = notes_slide.notes_text_frame
+                parts = []
+                if intent_text:
+                    parts.append("【设计意图】" + intent_text.strip())
+                if animation_text:
+                    parts.append("【动画】" + animation_text.strip())
+                if notes_text:
+                    parts.append("【讲师备注】" + notes_text.strip())
+                tf.text = "\n\n".join(parts)
+            except Exception:
+                pass
+        # ② 写原生 PPT 动画（切换 + 入场）—— 渐进增强，失败不影响内容
+        _apply_slide_transition(slide, trans_kind, dur_ms=650)
+        _apply_entry_animations(slide, mode=entry_mode)
 
     def _poly_decor(slide):
         """低多边形装饰（左上/右下散点）。"""
@@ -873,6 +1115,8 @@ def _build_pptx_file_bytes(title: str, slides: list, theme_info: dict = None) ->
         is_cover = (i == 1) or ("封面" in s_title)
         is_toc = (i == 2) or ("目录" in s_title)
         is_end = (i == len(slides)) or ("封底" in s_title or "致谢" in s_title)
+        # ====== 动画预设：根据 slides[i].animation 字段 + 页面语义推导 ======
+        trans_kind, entry_mode = _resolve_anim_preset(s_anim, is_cover, is_end, is_toc, i)
 
         if is_cover:
             # 封面：墨深蓝 → 青黛对角渐变底 + 玻璃标题卡
@@ -919,8 +1163,8 @@ def _build_pptx_file_bytes(title: str, slides: list, theme_info: dict = None) ->
                 _set_run_font(rr, FONT_KAITI, 26, True, False, C_YUEBAI)
             except Exception:
                 pass
-            # notes
-            _add_slide_notes(slide, s_notes, s_intent, s_anim)
+            # notes + 动画（动画收口在 _add_slide_notes 内）
+            _add_slide_notes(slide, s_notes, s_intent, s_anim, trans_kind, entry_mode)
             continue
 
         if is_end:
@@ -939,7 +1183,7 @@ def _build_pptx_file_bytes(title: str, slides: list, theme_info: dict = None) ->
             _textbox(slide, Inches(0), Inches(5.25), SW, Inches(0.4),
                      "欢迎批评指正", size=14, color=C_MOLAN,
                      align=PP_ALIGN.CENTER, italic=True, font_name=FONT_KAITI)
-            _add_slide_notes(slide, s_notes, s_intent, s_anim)
+            _add_slide_notes(slide, s_notes, s_intent, s_anim, trans_kind, entry_mode)
             continue
 
         if is_toc:
@@ -998,7 +1242,7 @@ def _build_pptx_file_bytes(title: str, slides: list, theme_info: dict = None) ->
                          font_name=FONT_TITLE if kind=="title" else FONT_BODY,
                          bold=(kind=="title"))
                 cur_y += row_h
-            _add_slide_notes(slide, s_notes, s_intent, s_anim)
+            _add_slide_notes(slide, s_notes, s_intent, s_anim, trans_kind, entry_mode)
             continue
 
         # ===== 普通内页：新知 / 赏析 / 互动 / 练习 / 导入 / 总结 / 作业 =====
@@ -1174,8 +1418,8 @@ def _build_pptx_file_bytes(title: str, slides: list, theme_info: dict = None) ->
                     pr.space_after = Pt(2)
                     rr_ = pr.add_run(); rr_.text = ln
                     _set_run_font(rr_, FONT_BODY, 10.5, False, False, C_TEXT_DARK)
-        # 写入原生 notes
-        _add_slide_notes(slide, s_notes, s_intent, s_anim)
+        # notes + 动画（动画收口在 _add_slide_notes 内，避免 continue 漏写）
+        _add_slide_notes(slide, s_notes, s_intent, s_anim, trans_kind, entry_mode)
 
     # 保存到 bytes
     bio = io.BytesIO()
